@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Physics Performance Tracker</title>
+    <style>
+        :root { --bg: #0f172a; --card: #1e293b; --accent: #38bdf8; --text: #f1f5f9; --success: #22c55e; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; align-items: center; min-height: 100vh; margin: 0; padding: 20px; }
+        .container { background: var(--card); padding: 2rem; border-radius: 12px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5); width: 100%; max-width: 450px; text-align: center; }
+        h2 { margin-top: 0; color: var(--accent); font-weight: 600; }
+        .timer { font-size: 3.5rem; font-weight: bold; font-family: monospace; margin: 20px 0; letter-spacing: 2px; text-shadow: 0 0 10px rgba(56, 189, 248, 0.3); }
+        .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
+        .stat-box { background: rgba(255,255,255,0.05); padding: 10px; border-radius: 8px; font-size: 0.9rem; }
+        .stat-val { display: block; font-size: 1.2rem; font-weight: bold; color: var(--accent); }
+        button { cursor: pointer; border: none; border-radius: 6px; font-weight: bold; transition: 0.2s; }
+        .btn-main { width: 100%; padding: 15px; font-size: 1.1rem; background: var(--success); color: white; margin-bottom: 10px; }
+        .btn-main:active { transform: scale(0.98); }
+        .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .btn-ctrl { padding: 10px; background: #475569; color: white; }
+        .history { width: 100%; max-width: 450px; margin-top: 20px; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        th, td { text-align: left; padding: 12px; border-bottom: 1px solid #334155; }
+        .clear-btn { margin-top: 20px; background: transparent; color: #94a3b8; font-size: 0.7rem; text-decoration: underline; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>PHYSICS LOG v2.0</h2>
+    
+    <div class="stats-grid">
+        <div class="stat-box">Zadania dziś<span id="taskCount" class="stat-val">0</span></div>
+        <div class="stat-box">Śr. czas / zadanie<span id="avgTime" class="stat-val">0s</span></div>
+    </div>
+
+    <div class="timer" id="display">00:00:00</div>
+    
+    <button class="btn-main" id="taskBtn" onclick="completeTask()">ZADANIE SKOŃCZONE</button>
+    
+    <div class="controls">
+        <button class="btn-ctrl" id="startBtn" onclick="startTimer()">START</button>
+        <button class="btn-ctrl" onclick="resetTimer()">RESET</button>
+    </div>
+</div>
+
+<div class="history">
+    <h3>Ostatnie sesje</h3>
+    <table id="historyTable">
+        <thead><tr><th>Kiedy</th><th>Zadania</th><th>Czas</th></tr></thead>
+        <tbody id="logBody"></tbody>
+    </table>
+    <button class="clear-btn" onclick="clearData()">Wyczyść historię</button>
+</div>
+
+<script>
+    let startTime;
+    let timerInterval;
+    let elapsed = 0;
+    let sessionTasks = 0;
+    let history = JSON.parse(localStorage.getItem('physics_history')) || [];
+
+    function updateDisplay() {
+        const d = new Date(elapsed).toISOString().substr(11, 8);
+        document.getElementById("display").innerText = d;
+    }
+
+    function startTimer() {
+        if (!timerInterval) {
+            startTime = Date.now() - elapsed;
+            timerInterval = setInterval(() => {
+                elapsed = Date.now() - startTime;
+                updateDisplay();
+            }, 1000);
+            document.getElementById("startBtn").innerText = "PAUZA";
+        } else {
+            clearInterval(timerInterval);
+            timerInterval = null;
+            document.getElementById("startBtn").innerText = "WZNÓW";
+        }
+    }
+
+    function resetTimer() {
+        clearInterval(timerInterval);
+        timerInterval = null;
+        elapsed = 0;
+        sessionTasks = 0;
+        updateDisplay();
+        updateStats();
+        document.getElementById("startBtn").innerText = "START";
+    }
+
+    function completeTask() {
+        sessionTasks++;
+        updateStats();
+        saveToHistory();
+    }
+
+    function updateStats() {
+        document.getElementById("taskCount").innerText = sessionTasks;
+        if (sessionTasks > 0) {
+            const avg = Math.round((elapsed / 1000) / sessionTasks);
+            document.getElementById("avgTime").innerText = avg + "s";
+        }
+    }
+
+    function saveToHistory() {
+        const entry = {
+            date: new Date().toLocaleString('pl-PL', {hour:'2-digit', minute:'2-digit'}),
+            count: sessionTasks,
+            time: document.getElementById("display").innerText
+        };
+        // Update current session in history or add new one
+        history[0] = entry; 
+        localStorage.setItem('physics_history', JSON.stringify(history));
+        renderHistory();
+    }
+
+    function renderHistory() {
+        const body = document.getElementById("logBody");
+        body.innerHTML = history.map(h => `<tr><td>${h.date}</td><td>${h.count}</td><td>${h.time}</td></tr>`).join('');
+    }
+
+    function clearData() {
+        if(confirm("Czy na pewno wyczyścić statystyki?")) {
+            localStorage.removeItem('physics_history');
+            history = [];
+            resetTimer();
+            renderHistory();
+        }
+    }
+
+    renderHistory();
+</script>
+
+</body>
+</html>
