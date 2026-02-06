@@ -3,75 +3,146 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Physics Performance Tracker</title>
+    <title>Physics Performance Dashboard</title>
     <style>
-        :root { --bg: #0f172a; --card: #1e293b; --accent: #38bdf8; --text: #f1f5f9; --success: #22c55e; }
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; align-items: center; min-height: 100vh; margin: 0; padding: 20px; }
-        .container { background: var(--card); padding: 2rem; border-radius: 12px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5); width: 100%; max-width: 450px; text-align: center; }
-        h2 { margin-top: 0; color: var(--accent); font-weight: 600; }
-        .timer { font-size: 3.5rem; font-weight: bold; font-family: monospace; margin: 20px 0; letter-spacing: 2px; text-shadow: 0 0 10px rgba(56, 189, 248, 0.3); }
-        .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
-        .stat-box { background: rgba(255,255,255,0.05); padding: 10px; border-radius: 8px; font-size: 0.9rem; }
-        .stat-val { display: block; font-size: 1.2rem; font-weight: bold; color: var(--accent); }
-        button { cursor: pointer; border: none; border-radius: 6px; font-weight: bold; transition: 0.2s; }
-        .btn-main { width: 100%; padding: 15px; font-size: 1.1rem; background: var(--success); color: white; margin-bottom: 10px; }
-        .btn-main:active { transform: scale(0.98); }
-        .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-        .btn-ctrl { padding: 10px; background: #475569; color: white; }
-        .history { width: 100%; max-width: 450px; margin-top: 20px; }
-        table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
-        th, td { text-align: left; padding: 12px; border-bottom: 1px solid #334155; }
-        .clear-btn { margin-top: 20px; background: transparent; color: #94a3b8; font-size: 0.7rem; text-decoration: underline; }
+        :root {
+            --bg: #0d1117;
+            --surface: #161b22;
+            --accent: #58a6ff;
+            --success: #3fb950;
+            --border: #30363d;
+            --text: #c9d1d9;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            margin: 0;
+        }
+
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 20px;
+            width: 100%;
+            max-width: 600px;
+            margin-bottom: 20px;
+        }
+
+        /* TIMER & INPUT */
+        .timer {
+            font-family: monospace;
+            font-size: 3.5rem;
+            color: var(--accent);
+            text-align: center;
+            margin: 15px 0;
+            font-weight: bold;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            color: white;
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 10px;
+            box-sizing: border-box;
+        }
+
+        .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        button {
+            padding: 12px;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        .btn-start { background: var(--accent); color: white; }
+        .btn-save { background: var(--success); color: white; grid-column: span 2; margin-top: 10px; }
+
+        /* WYKRES */
+        .chart-container {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-around;
+            height: 150px;
+            padding-top: 20px;
+            border-bottom: 2px solid var(--border);
+            margin-bottom: 10px;
+        }
+        .bar-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            flex: 1;
+        }
+        .bar {
+            width: 70%;
+            background: var(--success);
+            border-radius: 3px 3px 0 0;
+            transition: height 0.5s ease-out;
+            position: relative;
+        }
+        .bar:hover { filter: brightness(1.2); }
+        .bar-val { font-size: 0.7rem; margin-bottom: 5px; }
+        .bar-label { font-size: 0.6rem; color: #8b949e; margin-top: 5px; transform: rotate(-45deg); height: 30px; }
+
+        /* TABELA */
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.8rem; }
+        th { text-align: left; color: #8b949e; border-bottom: 1px solid var(--border); padding: 8px; }
+        td { padding: 8px; border-bottom: 1px solid #21262d; }
     </style>
 </head>
 <body>
 
-<div class="container">
-    <h2>PHYSICS LOG v2.0</h2>
-    
-    <div class="stats-grid">
-        <div class="stat-box">Zadania dziś<span id="taskCount" class="stat-val">0</span></div>
-        <div class="stat-box">Śr. czas / zadanie<span id="avgTime" class="stat-val">0s</span></div>
-    </div>
+<div class="card">
+    <h3 style="margin-top:0">STATYSTYKI TYGODNIOWE</h3>
+    <div class="chart-container" id="chart">
+        </div>
+</div>
 
-    <div class="timer" id="display">00:00:00</div>
-    
-    <button class="btn-main" id="taskBtn" onclick="completeTask()">ZADANIE SKOŃCZONE</button>
-    
-    <div class="controls">
-        <button class="btn-ctrl" id="startBtn" onclick="startTimer()">START</button>
-        <button class="btn-ctrl" onclick="resetTimer()">RESET</button>
+<div class="card">
+    <input type="text" id="taskName" placeholder="NAZWA ZADANIA (NP. DYNAMIKA ZAD 2)...">
+    <div class="timer" id="display">00:00:00.000</div>
+    <div class="btn-group">
+        <button class="btn-start" id="startBtn" onclick="toggleTimer()">START</button>
+        <button style="background:#30363d; color:white" onclick="resetTimer()">RESET</button>
+        <button class="btn-save" onclick="saveTask()">SKOŃCZ ZADANIE & ZAPISZ</button>
     </div>
 </div>
 
-<div class="history">
-    <h3>Ostatnie sesje</h3>
+<div class="card">
+    <h3>HISTORIA</h3>
     <table id="historyTable">
-        <thead><tr><th>Kiedy</th><th>Zadania</th><th>Czas</th></tr></thead>
+        <thead>
+            <tr><th>DATA</th><th>ZADANIE</th><th>CZAS</th></tr>
+        </thead>
         <tbody id="logBody"></tbody>
     </table>
-    <button class="clear-btn" onclick="clearData()">Wyczyść historię</button>
+    <button onclick="clearHistory()" style="background:none; color:red; font-size:0.7rem; margin-top:15px; cursor:pointer">WYCZYŚĆ WSZYSTKO</button>
 </div>
 
 <script>
     let startTime;
     let timerInterval;
     let elapsed = 0;
-    let sessionTasks = 0;
-    let history = JSON.parse(localStorage.getItem('physics_history')) || [];
+    let history = JSON.parse(localStorage.getItem('phys_v4_data')) || [];
 
-    function updateDisplay() {
-        const d = new Date(elapsed).toISOString().substr(11, 8);
-        document.getElementById("display").innerText = d;
-    }
-
-    function startTimer() {
+    function toggleTimer() {
         if (!timerInterval) {
             startTime = Date.now() - elapsed;
             timerInterval = setInterval(() => {
                 elapsed = Date.now() - startTime;
                 updateDisplay();
-            }, 1000);
+            }, 10);
             document.getElementById("startBtn").innerText = "PAUZA";
         } else {
             clearInterval(timerInterval);
@@ -80,57 +151,94 @@
         }
     }
 
+    function updateDisplay() {
+        let ms = String(elapsed % 1000).padStart(3, '0');
+        let s = String(Math.floor(elapsed / 1000) % 60).padStart(2, '0');
+        let m = String(Math.floor(elapsed / 60000) % 60).padStart(2, '0');
+        let h = String(Math.floor(elapsed / 3600000)).padStart(2, '0');
+        document.getElementById("display").innerText = `${h}:${m}:${s}.${ms}`;
+    }
+
     function resetTimer() {
         clearInterval(timerInterval);
         timerInterval = null;
         elapsed = 0;
-        sessionTasks = 0;
         updateDisplay();
-        updateStats();
         document.getElementById("startBtn").innerText = "START";
     }
 
-    function completeTask() {
-        sessionTasks++;
-        updateStats();
-        saveToHistory();
-    }
-
-    function updateStats() {
-        document.getElementById("taskCount").innerText = sessionTasks;
-        if (sessionTasks > 0) {
-            const avg = Math.round((elapsed / 1000) / sessionTasks);
-            document.getElementById("avgTime").innerText = avg + "s";
-        }
-    }
-
-    function saveToHistory() {
+    function saveTask() {
+        if (elapsed === 0) return;
+        
+        const name = document.getElementById("taskName").value || "Zadanie fizyka";
+        const now = new Date();
         const entry = {
-            date: new Date().toLocaleString('pl-PL', {hour:'2-digit', minute:'2-digit'}),
-            count: sessionTasks,
-            time: document.getElementById("display").innerText
+            date: now.toISOString().split('T')[0], // YYYY-MM-DD
+            fullTime: now.toLocaleTimeString(),
+            task: name,
+            duration: document.getElementById("display").innerText,
+            rawMs: elapsed
         };
-        // Update current session in history or add new one
-        history[0] = entry; 
-        localStorage.setItem('physics_history', JSON.stringify(history));
-        renderHistory();
+
+        history.unshift(entry);
+        localStorage.setItem('phys_v4_data', JSON.stringify(history));
+        
+        document.getElementById("taskName").value = "";
+        resetTimer();
+        refreshUI();
     }
 
-    function renderHistory() {
+    function refreshUI() {
+        renderTable();
+        renderChart();
+    }
+
+    function renderTable() {
         const body = document.getElementById("logBody");
-        body.innerHTML = history.map(h => `<tr><td>${h.date}</td><td>${h.count}</td><td>${h.time}</td></tr>`).join('');
+        body.innerHTML = history.slice(0, 10).map(h => `
+            <tr>
+                <td>${h.date}</td>
+                <td style="color:var(--accent)">${h.task}</td>
+                <td style="font-family:monospace">${h.duration}</td>
+            </tr>
+        `).join('');
     }
 
-    function clearData() {
-        if(confirm("Czy na pewno wyczyścić statystyki?")) {
-            localStorage.removeItem('physics_history');
+    function renderChart() {
+        const chart = document.getElementById("chart");
+        const counts = {};
+        
+        // Liczenie zadań na dzień
+        history.forEach(h => {
+            counts[h.date] = (counts[h.date] || 0) + 1;
+        });
+
+        // Pobranie ostatnich 7 dni
+        const dates = Object.keys(counts).sort().slice(-7);
+        const maxTasks = Math.max(...Object.values(counts), 5);
+
+        chart.innerHTML = dates.map(d => {
+            const count = counts[d];
+            const height = (count / maxTasks) * 100;
+            return `
+                <div class="bar-wrapper">
+                    <span class="bar-val">${count}</span>
+                    <div class="bar" style="height: ${height}%"></div>
+                    <span class="bar-label">${d.slice(5)}</span>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function clearHistory() {
+        if(confirm("Usunąć wszystkie dane?")) {
+            localStorage.removeItem('phys_v4_data');
             history = [];
-            resetTimer();
-            renderHistory();
+            refreshUI();
         }
     }
 
-    renderHistory();
+    refreshUI();
 </script>
 
 </body>
