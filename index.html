@@ -1,104 +1,110 @@
 <!DOCTYPE html>
-<html lang="pl">
+<html>
 <head>
     <meta charset="UTF-8">
-    <title>RAW_TRACKER_V5</title>
+    <title>FIZYKA_SYSTEM_V7</title>
     <style>
-        body { font-family: monospace; background: #fff; color: #000; padding: 20px; line-height: 1.2; }
-        .container { border: 2px solid #000; padding: 20px; max-width: 600px; }
-        .timer { font-size: 4rem; font-weight: bold; border-bottom: 2px solid #000; margin: 10px 0; padding: 10px 0; }
-        input { width: 100%; border: 2px solid #000; padding: 10px; font-family: monospace; font-size: 1rem; margin-bottom: 10px; outline: none; }
-        button { background: #000; color: #fff; border: none; padding: 10px 20px; font-family: monospace; font-weight: bold; cursor: pointer; margin-right: 5px; margin-bottom: 5px; }
-        button:hover { background: #444; }
-        .chart { display: flex; align-items: flex-end; height: 100px; border: 1px solid #000; margin: 20px 0; padding: 10px; }
-        .bar-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; }
-        .bar { width: 80%; background: #000; border: 1px solid #000; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { border: 1px solid #000; padding: 5px; text-align: left; font-size: 0.8rem; }
-        h1, h2, h3 { margin: 0 0 10px 0; text-transform: uppercase; }
+        body { font-family: monospace; font-size: 12px; background: white; color: black; }
+        .s { border: 1px solid black; padding: 10px; margin-bottom: 5px; }
+        .t { font-size: 40px; font-weight: bold; margin: 5px 0; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid black; padding: 2px; text-align: left; }
+        button { background: #eee; border: 1px solid black; cursor: pointer; font-family: monospace; }
+        .bar-area { display: flex; align-items: flex-end; height: 40px; border: 1px solid black; margin-top: 5px; }
+        .b { background: black; flex: 1; border: 1px solid white; }
     </style>
 </head>
 <body>
 
-<div class="container">
-    <h3>[STATYSTYKI_DNI]</h3>
-    <div class="chart" id="chart"></div>
-
-    <h3>[LICZNIK_CZASU]</h3>
-    <input type="text" id="taskName" placeholder="NAZWA_ZADANIA" spellcheck="false">
-    <div class="timer" id="display">00:00:00.000</div>
-    
-    <button onclick="toggle()">START/STOP</button>
-    <button onclick="reset()">RESET</button>
-    <button onclick="save()" style="width: 100%; margin-top: 10px; background: #000; color: #fff;">ZAPISZ_ZADANIE_I_RESETUJ</button>
+<div class="s">
+    <strong>STATYSTYKI_CZASU:</strong><br>
+    CZAS_DZISIAJ: <span id="tdt">00:00:00</span> (ZADANIA: <span id="dc">0</span>)<br>
+    CZAS_TOTAL_OVERALL: <span id="tot">00:00:00</span><br>
+    SREDNI_CZAS_NA_ZADANIE: <span id="avg">0s</span>
 </div>
 
-<h3>[HISTORIA_LOG]</h3>
-<table id="historyTable">
-    <thead>
-        <tr><th>DATA</th><th>ZADANIE</th><th>CZAS</th></tr>
-    </thead>
-    <tbody id="logBody"></tbody>
-</table>
+<div class="s">
+    <strong>WYKRES_7_DNI:</strong>
+    <div class="bar-area" id="ch"></div>
+</div>
 
-<button onclick="clearData()" style="background:none; color:#000; border:1px solid #000; margin-top:20px; font-size:0.7rem;">WYCZYSC_WSZYSTKO</button>
+<div class="s">
+    <strong>OPERACJE:</strong><br>
+    NAZWA: <input type="text" id="tn" style="border:1px solid black; width:200px;">
+    <div class="t" id="disp">00:00:00.000</div>
+    <button onclick="tg()">START/STOP</button>
+    <button onclick="rs()">RESET</button>
+    <button onclick="sv()" style="font-weight:bold;">ZAPISZ_I_NASTEPNE</button>
+</div>
+
+<div class="s">
+    <strong>LOG_ZADAN:</strong>
+    <table id="ht">
+        <thead><tr><th>DATA</th><th>NAZWA</th><th>CZAS</th></tr></thead>
+        <tbody id="lb"></tbody>
+    </table>
+</div>
+
+<button onclick="cl()" style="font-size:9px;">WYCZYSC_DATABASE</button>
 
 <script>
-    let start, interval, elapsed = 0, history = JSON.parse(localStorage.getItem('raw_v5')) || [];
+    let st, int, el = 0, h = JSON.parse(localStorage.getItem('f_v7')) || [];
 
-    function toggle() {
-        if (!interval) {
-            start = Date.now() - elapsed;
-            interval = setInterval(() => { elapsed = Date.now() - start; update(); }, 10);
-        } else { clearInterval(interval); interval = null; }
+    function tg() {
+        if (!int) {
+            st = Date.now() - el;
+            int = setInterval(() => { el = Date.now() - st; up(); }, 10);
+        } else { clearInterval(int); int = null; }
     }
 
-    function update() {
-        let ms = String(elapsed % 1000).padStart(3, '0');
-        let s = String(Math.floor(elapsed / 1000) % 60).padStart(2, '0');
-        let m = String(Math.floor(elapsed / 60000) % 60).padStart(2, '0');
-        let h = String(Math.floor(elapsed / 3600000)).padStart(2, '0');
-        document.getElementById("display").innerText = `${h}:${m}:${s}.${ms}`;
+    function up() {
+        let m = String(el % 1000).padStart(3, '0');
+        let s = String(Math.floor(el / 1000) % 60).padStart(2, '0');
+        let mn = String(Math.floor(el / 60000) % 60).padStart(2, '0');
+        let hr = String(Math.floor(el / 3600000)).padStart(2, '0');
+        document.getElementById("disp").innerText = `${hr}:${mn}:${s}.${m}`;
     }
 
-    function reset() { clearInterval(interval); interval = null; elapsed = 0; update(); }
+    function rs() { clearInterval(int); int = null; el = 0; up(); }
 
-    function save() {
-        if (elapsed === 0) return;
-        const name = document.getElementById("taskName").value || "BRAK_NAZWY";
-        history.unshift({
-            d: new Date().toISOString().split('T')[0],
-            n: name,
-            t: document.getElementById("display").innerText
-        });
-        localStorage.setItem('raw_v5', JSON.stringify(history));
-        document.getElementById("taskName").value = "";
-        reset();
-        render();
+    function f(ms) {
+        let s = Math.floor(ms / 1000);
+        let hr = Math.floor(s / 3600);
+        let mn = Math.floor((s % 3600) / 60);
+        let sc = s % 60;
+        return `${String(hr).padStart(2,'0')}:${String(mn).padStart(2,'0')}:${String(sc).padStart(2,'0')}`;
     }
 
-    function render() {
-        // Tabela
-        document.getElementById("logBody").innerHTML = history.slice(0, 10).map(h => 
-            `<tr><td>${h.d}</td><td>${h.n}</td><td>${h.t}</td></tr>`).join('');
-        
-        // Wykres
-        const counts = {};
-        history.forEach(h => counts[h.d] = (counts[h.d] || 0) + 1);
-        const dates = Object.keys(counts).sort().slice(-7);
-        const max = Math.max(...Object.values(counts), 1);
-        
-        document.getElementById("chart").innerHTML = dates.map(d => `
-            <div class="bar-wrap">
-                <span style="font-size:0.6rem">${counts[d]}</span>
-                <div class="bar" style="height:${(counts[d]/max)*100}px"></div>
-                <span style="font-size:0.5rem">${d.slice(5)}</span>
-            </div>`).join('');
+    function sv() {
+        if (el === 0) return;
+        h.unshift({ d: new Date().toISOString().split('T')[0], n: document.getElementById("tn").value || "ZAD", t: document.getElementById("disp").innerText, ms: el });
+        localStorage.setItem('f_v7', JSON.stringify(h));
+        document.getElementById("tn").value = "";
+        clearInterval(int); el = 0; st = Date.now();
+        int = setInterval(() => { el = Date.now() - st; up(); }, 10);
+        rn();
     }
 
-    function clearData() { if(confirm("USUNAC?")) { localStorage.removeItem('raw_v5'); history = []; render(); } }
+    function rn() {
+        const today = new Date().toISOString().split('T')[0];
+        const t_tasks = h.filter(x => x.d === today);
+        const all_ms = h.reduce((a, b) => a + b.ms, 0);
+        const day_ms = t_tasks.reduce((a, b) => a + b.ms, 0);
 
-    render();
+        document.getElementById("lb").innerHTML = h.slice(0, 10).map(x => `<tr><td>${x.d}</td><td>${x.n}</td><td>${x.t}</td></tr>`).join('');
+        document.getElementById("dc").innerText = t_tasks.length;
+        document.getElementById("tdt").innerText = f(day_ms);
+        document.getElementById("tot").innerText = f(all_ms);
+        document.getElementById("avg").innerText = h.length ? Math.round((all_ms/h.length)/1000) + "s" : "0s";
+
+        const cts = {}; h.forEach(x => cts[x.d] = (cts[x.d] || 0) + 1);
+        const dts = Object.keys(cts).sort().slice(-7);
+        const mx = Math.max(...Object.values(cts), 1);
+        document.getElementById("ch").innerHTML = dts.map(d => `<div class="b" style="height:${(cts[d]/mx)*100}%"></div>`).join('');
+    }
+
+    function cl() { if(confirm("DEL?")) { localStorage.removeItem('f_v7'); h = []; rn(); } }
+    rn();
 </script>
 </body>
 </html>
