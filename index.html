@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 fill=%22black%22/><text y=%22.82em%22 x=%2250%%22 font-family=%22monospace%22 font-size=%2290%22 fill=%22white%22 font-weight=%22bold%22 text-anchor=%22middle%22>+</text></svg>">
-    <title>FIZYKA_SYSTEM_V13_MIGRATION</title>
+    <title>FIZYKA_SYSTEM_V13_PRO_CHART</title>
     <style>
         :root { --b: 2px solid black; --shadow: 5px 5px 0px 0px black; }
         body { font-family: 'Consolas', monospace; font-size: 13px; background: #f0f0f0; color: black; margin:0; padding:30px; line-height: 1.4; }
@@ -28,6 +28,9 @@
         ::-webkit-scrollbar-thumb { background: black; border: 4px solid white; }
         .grid-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
         .migration-alert { background: black; color: white; padding: 10px; margin-bottom: 20px; display: none; font-weight: bold; text-align: center; }
+        
+        /* Styl dla wykresu */
+        canvas { width: 100%; height: 250px; display: block; cursor: crosshair; }
     </style>
 </head>
 <body>
@@ -44,6 +47,11 @@
         <span class="label">Globalny Rekord Wytrzymałości (Max)</span>
         <div id="bestAll" style="font-weight: bold; font-size: 16px;">—</div>
     </div>
+</div>
+
+<div class="s">
+    <span class="label">Timeline Czasu Nauki (Suma dzienna)</span>
+    <canvas id="activityChart"></canvas>
 </div>
 
 <div class="s">
@@ -86,24 +94,15 @@
 <script>
 let tasks = [];
 
-// --- MODUŁ MIGRACJI DANYCH ---
+// --- MIGRACJA DANYCH ---
 const migrate = () => {
     const oldData = localStorage.getItem('f_v7');
     if (oldData) {
         try {
             const parsedOld = JSON.parse(oldData);
-            const migrated = parsedOld.map(item => ({
-                date: item.d,
-                id: item.n,
-                timeStr: item.t,
-                ms: item.ms
-            }));
+            const migrated = parsedOld.map(item => ({ date: item.d, id: item.n, timeStr: item.t, ms: item.ms }));
             const existingIds = new Set(tasks.map(t => `${t.date}-${t.id}-${t.ms}`));
-            migrated.forEach(m => {
-                if (!existingIds.has(`${m.date}-${m.id}-${m.ms}`)) {
-                    tasks.push(m);
-                }
-            });
+            migrated.forEach(m => { if (!existingIds.has(`${m.date}-${m.id}-${m.ms}`)) tasks.push(m); });
             tasks.sort((a,b) => new Date(b.date) - new Date(a.date));
             localStorage.setItem('f_v12', JSON.stringify(tasks));
             document.getElementById('migrationInfo').style.display = 'block';
@@ -111,10 +110,7 @@ const migrate = () => {
     }
 };
 
-try {
-    tasks = JSON.parse(localStorage.getItem('f_v12')) || [];
-} catch(e) { tasks = []; }
-
+try { tasks = JSON.parse(localStorage.getItem('f_v12')) || []; } catch(e) { tasks = []; }
 migrate();
 
 const timer = {
@@ -140,10 +136,7 @@ const app = {
         const s = Math.floor(ms / 1000);
         return `${String(Math.floor(s/3600)).padStart(2,'0')}:${String(Math.floor((s%3600)/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
     },
-    getChapter(name) {
-        const match = name.match(/(\d+)/);
-        return match ? match[1] : "Inne";
-    },
+    getChapter(name) { return (name.match(/(\d+)/) || ["","Inne"])[1]; },
     save() {
         if (timer.elapsed < 1000) return;
         tasks.unshift({
@@ -152,12 +145,10 @@ const app = {
             timeStr: document.getElementById("disp").innerText,
             ms: timer.elapsed
         });
-        this.sync();
-        timer.reset();
-        document.getElementById("tn").value = "";
+        this.sync(); timer.reset(); document.getElementById("tn").value = "";
     },
     sync() { localStorage.setItem('f_v12', JSON.stringify(tasks)); this.render(); },
-    render() { this.updateStats(); this.renderChapters(); this.renderLog(); },
+    render() { this.updateStats(); this.renderChapters(); this.renderLog(); this.drawChart(); },
     updateStats() {
         const today = new Date().toISOString().split('T')[0];
         const todayTasks = tasks.filter(t => t.date === today);
@@ -174,8 +165,7 @@ const app = {
         tasks.forEach(t => {
             const chap = this.getChapter(t.id);
             if (!groups[chap]) groups[chap] = { count: 0, max: 0, total: 0, str: "" };
-            groups[chap].count++;
-            groups[chap].total += t.ms;
+            groups[chap].count++; groups[chap].total += t.ms;
             if (t.ms > groups[chap].max) { groups[chap].max = t.ms; groups[chap].str = t.timeStr; }
         });
         let html = `<table><thead><tr><th>ROZDZIAŁ</th><th>SESJI</th><th>REKORD (MAX)</th><th>ŚREDNIA</th></tr></thead><tbody>`;
@@ -186,16 +176,167 @@ const app = {
         document.getElementById("chapterStats").innerHTML = html + `</tbody></table>`;
     },
     renderLog() {
-        // NAPRAWA PRZEPEŁNIENIA: Obliczamy globalny max zamiast per-rozdział
         const globalMax = tasks.length ? Math.max(...tasks.map(t => t.ms)) : 0;
-        
-        const tbody = document.getElementById("lb");
-        tbody.innerHTML = "";
+        const tbody = document.getElementById("lb"); tbody.innerHTML = "";
         tasks.forEach((t, i) => {
             const percent = globalMax > 0 ? (t.ms / globalMax) * 100 : 0;
             tbody.innerHTML += `<tr><td>${t.date}</td><td><strong>${t.id}</strong></td><td>${t.timeStr}</td><td><div class="table-bar-container"><div class="table-bar" style="width:${percent}%"></div></div></td><td><button onclick="app.remove(${i})" style="padding:2px 8px; font-size:10px;">X</button></td></tr>`;
         });
     },
+    
+    // --- NOWY, PROFESJONALNY WYKRES ---
+    // --- PODMIEŃ TĘ FUNKCJĘ ---
+    drawChart() {
+        const canvas = document.getElementById('activityChart');
+        const ctx = canvas.getContext('2d');
+        
+        // Konfiguracja DPI
+        const dpr = window.devicePixelRatio || 1;
+        const rect = canvas.getBoundingClientRect();
+        canvas.width = rect.width * dpr;
+        canvas.height = rect.height * dpr;
+        ctx.scale(dpr, dpr);
+        const w = rect.width;
+        const h = rect.height;
+
+        ctx.clearRect(0, 0, w, h);
+        
+        if (tasks.length === 0) {
+            ctx.fillStyle = "#aaa"; ctx.textAlign = "center"; ctx.font = "bold 12px Consolas";
+            ctx.fillText("BRAK DANYCH - ROZPOCZNIJ POMIAR", w/2, h/2);
+            return;
+        }
+
+        // 1. Agregacja danych
+        let dayMap = {};
+        let countMap = {};
+        tasks.forEach(t => {
+            dayMap[t.date] = (dayMap[t.date] || 0) + t.ms;
+            countMap[t.date] = (countMap[t.date] || 0) + 1;
+        });
+
+        // 2. Oś czasu
+        let dates = Object.keys(dayMap).sort();
+        if (dates.length < 2 && dates.length > 0) {
+            let d = new Date(dates[0]); d.setDate(d.getDate()-1);
+            dates.unshift(d.toISOString().split('T')[0]);
+        }
+
+        let startD = new Date(dates[0]);
+        let endD = new Date(dates[dates.length-1]);
+        
+        let sumPoints = [];
+        let avgPoints = [];
+        let labels = [];
+        
+        // Zmienne do niezależnego skalowania
+        let maxSum = 0;
+        let maxAvg = 0;
+
+        for (let d = new Date(startD); d <= endD; d.setDate(d.getDate() + 1)) {
+            let dateStr = d.toISOString().split('T')[0];
+            let sum = dayMap[dateStr] || 0;
+            let count = countMap[dateStr] || 1;
+            let avg = sum > 0 ? sum / count : 0;
+
+            sumPoints.push(sum);
+            avgPoints.push(avg);
+            labels.push(dateStr.slice(5)); // MM-DD
+            
+            // Osobne maxima dla obu serii
+            if(sum > maxSum) maxSum = sum;
+            if(avg > maxAvg) maxAvg = avg;
+        }
+
+        const padB = 30; 
+        const padT = 30;
+        const graphH = h - padB - padT;
+        const stepX = w / (sumPoints.length - 1);
+        
+        // Funkcja obliczająca Y z uwzględnieniem konkretnego MAX (dynamiczna skala)
+        const getY = (val, maxVal) => (h - padB) - (val / (maxVal || 1)) * graphH;
+
+        // Funkcja rysująca (bazowa)
+        const drawCurve = (dataArray, currentMax, isDashed, fillStyle) => {
+            ctx.beginPath();
+            // Mapujemy punkty używając właściwej skali (currentMax)
+            let pts = dataArray.map((val, i) => ({ x: i * stepX, y: getY(val, currentMax) }));
+            
+            ctx.moveTo(pts[0].x, pts[0].y);
+
+            for (let i = 0; i < pts.length - 1; i++) {
+                const p0 = pts[Math.max(0, i - 1)];
+                const p1 = pts[i];
+                const p2 = pts[i + 1];
+                const p3 = pts[Math.min(pts.length - 1, i + 2)];
+
+                const cp1x = p1.x + (p2.x - p0.x) / 6 * 0.5;
+                const cp1y = p1.y + (p2.y - p0.y) / 6 * 0.5;
+                const cp2x = p2.x - (p3.x - p1.x) / 6 * 0.5;
+                const cp2y = p2.y - (p3.y - p1.y) / 6 * 0.5;
+
+                ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y);
+            }
+
+            if (fillStyle) {
+                ctx.lineTo(w, h - padB);
+                ctx.lineTo(0, h - padB);
+                ctx.closePath();
+                ctx.fillStyle = fillStyle;
+                ctx.fill();
+            } else {
+                if (isDashed) ctx.setLineDash([6, 4]);
+                else ctx.setLineDash([]);
+                
+                ctx.strokeStyle = isDashed ? "#444" : "#000";
+                ctx.lineWidth = 2.5;
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+        };
+
+        // 1. Rysuj SUMA (Wypełnienie + Linia) - skala maxSum
+        const grad = ctx.createLinearGradient(0, padT, 0, h - padB);
+        grad.addColorStop(0, "rgba(0,0,0,0.6)");
+        grad.addColorStop(1, "rgba(0,0,0,0.0)");
+        
+        drawCurve(sumPoints, maxSum, false, grad); // Tło
+        drawCurve(sumPoints, maxSum, false, null); // Obrys
+
+        // 2. Rysuj ŚREDNIA (Linia przerywana) - skala maxAvg
+        drawCurve(avgPoints, maxAvg, true, null);
+
+        // Znaczniki Dni
+        ctx.fillStyle = "black";
+        ctx.font = "10px Consolas";
+        ctx.textAlign = "center";
+        
+        const maxLabels = Math.floor(w / 40);
+        const skip = Math.ceil(labels.length / maxLabels);
+
+        for(let i=0; i<labels.length; i+=skip) {
+            const x = i * stepX;
+            ctx.beginPath(); ctx.moveTo(x, h - padB); ctx.lineTo(x, h - padB + 5);
+            ctx.strokeStyle = "#ccc"; ctx.lineWidth = 1; ctx.stroke();
+            ctx.fillText(labels[i], x, h - 10);
+        }
+
+        // Legenda (Zaktualizowana informacja o skali)
+        ctx.textAlign = "left";
+        ctx.fillStyle = "black";
+        
+        ctx.fillRect(10, 10, 12, 12);
+        ctx.fillText("SUMA CZASU (Lewa skala)", 28, 20);
+        
+        ctx.beginPath();
+        ctx.setLineDash([4, 2]);
+        ctx.moveTo(180, 16);
+        ctx.lineTo(200, 16);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillText("ŚREDNIA ZADANIA (Prawa skala)", 206, 20);
+    },
+
     remove(i) { if (confirm("USUNĄĆ?")) { tasks.splice(i, 1); this.sync(); } },
     export() {
         const blob = new Blob([JSON.stringify(tasks, null, 2)], {type: "application/json"});
@@ -210,15 +351,9 @@ const app = {
             try { 
                 let data = JSON.parse(ev.target.result);
                 if (data.length > 0 && data[0].d) {
-                    data = data.map(item => ({
-                        date: item.d,
-                        id: item.n,
-                        timeStr: item.t,
-                        ms: item.ms
-                    }));
+                    data = data.map(item => ({ date: item.d, id: item.n, timeStr: item.t, ms: item.ms }));
                 }
-                tasks = data; 
-                this.sync(); 
+                tasks = data; this.sync(); 
             } catch(err) { alert("BŁĄD PLIKU"); } 
         };
         reader.readAsText(e.target.files[0]);
@@ -227,6 +362,7 @@ const app = {
 };
 
 app.render();
+window.addEventListener('resize', () => app.drawChart());
 </script>
 </body>
 </html>
