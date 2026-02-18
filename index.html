@@ -1,111 +1,232 @@
 <!DOCTYPE html>
-<html>
+<html lang="pl">
 <head>
     <meta charset="UTF-8">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 fill=%22black%22/><text y=%22.82em%22 x=%2250%%22 font-family=%22monospace%22 font-size=%2290%22 fill=%22white%22 font-weight=%22bold%22 text-anchor=%22middle%22>+</text></svg>">
-    <title>FIZYKA_SYSTEM_V7</title>
+    <title>FIZYKA_SYSTEM_V13_MIGRATION</title>
     <style>
-        body { font-family: monospace; font-size: 12px; background: white; color: black; }
-        .s { border: 1px solid black; padding: 10px; margin-bottom: 5px; }
-        .t { font-size: 40px; font-weight: bold; margin: 5px 0; }
-        table { width: 100%; border-collapse: collapse; }
-        th, td { border: 1px solid black; padding: 2px; text-align: left; }
-        button { background: #eee; border: 1px solid black; cursor: pointer; font-family: monospace; }
-        .bar-area { display: flex; align-items: flex-end; height: 40px; border: 1px solid black; margin-top: 5px; }
-        .b { background: black; flex: 1; border: 1px solid white; }
+        :root { --b: 2px solid black; --shadow: 5px 5px 0px 0px black; }
+        body { font-family: 'Consolas', monospace; font-size: 13px; background: #f0f0f0; color: black; margin:0; padding:30px; line-height: 1.4; }
+        .s { border: var(--b); padding: 20px; margin-bottom: 25px; background: white; box-shadow: var(--shadow); position: relative; }
+        .t { font-size: 56px; font-weight: bold; margin: 15px 0; letter-spacing: -3px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { border: var(--b); padding: 10px; text-align: left; vertical-align: middle; }
+        th { background: #000; color: white; text-transform: uppercase; font-size: 11px; letter-spacing: 1px; }
+        button { 
+            background: white; border: var(--b); cursor: pointer; font-family: inherit; 
+            padding: 10px 20px; margin: 4px; font-weight: bold; text-transform: uppercase;
+            box-shadow: 3px 3px 0px 0px black; transition: 0.1s;
+        }
+        button:hover { transform: translate(-2px, -2px); box-shadow: 5px 5px 0px 0px black; }
+        button:active { transform: translate(2px, 2px); box-shadow: 0px 0px 0px 0px black; }
+        button.action { background: black; color: white; }
+        input[type="text"] { border: var(--b); padding: 10px; font-family: inherit; outline: none; background: white; width: 280px; }
+        .table-bar-container { width: 100%; height: 16px; background: #eee; border: var(--b); position: relative; overflow: hidden; }
+        .table-bar { height: 100%; background: black; transition: width 0.3s ease-in-out; }
+        .label { font-size: 10px; font-weight: bold; text-transform: uppercase; color: #666; margin-bottom: 5px; display: block; }
+        ::-webkit-scrollbar { width: 14px; }
+        ::-webkit-scrollbar-thumb { background: black; border: 4px solid white; }
+        .grid-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .migration-alert { background: black; color: white; padding: 10px; margin-bottom: 20px; display: none; font-weight: bold; text-align: center; }
     </style>
 </head>
 <body>
 
-<div class="s">
-    <strong>STATYSTYKI_CZASU:</strong><br>
-    CZAS_DZISIAJ: <span id="tdt">00:00:00</span> (ZADANIA: <span id="dc">0</span>)<br>
-    CZAS_TOTAL_OVERALL: <span id="tot">00:00:00</span><br>
-    SREDNI_CZAS_NA_ZADANIE: <span id="avg">0s</span>
+<div id="migrationInfo" class="migration-alert">WYKRYTO I ZAIMPORTOWANO DANE Z POPRZEDNIEJ WERSJI (V7)</div>
+
+<div class="grid-stats">
+    <div class="s">
+        <span class="label">Statystyki Skupienia</span>
+        DZIŚ: <strong id="tdt">00:00:00</strong> | ZADAŃ: <strong id="dc">0</strong><br>
+        SUMA: <strong id="tot">00:00:00</strong> | ŚREDNIA: <strong id="avg">0s</strong>
+    </div>
+    <div class="s">
+        <span class="label">Globalny Rekord Wytrzymałości (Max)</span>
+        <div id="bestAll" style="font-weight: bold; font-size: 16px;">—</div>
+    </div>
 </div>
 
 <div class="s">
-    <strong>WYKRES_7_DNI:</strong>
-    <div class="bar-area" id="ch"></div>
+    <span class="label">Ranking Rozdziałów</span>
+    <div id="chapterStats"></div>
 </div>
 
 <div class="s">
-    <strong>OPERACJE:</strong><br>
-    NAZWA: <input type="text" id="tn" style="border:1px solid black; width:200px;">
+    <span class="label">Kontroler Czasu</span>
+    ID ZADANIA: <input type="text" id="tn" placeholder="np. 15.01">
     <div class="t" id="disp">00:00:00.000</div>
-    <button onclick="tg()">START/STOP</button>
-    <button onclick="rs()">RESET</button>
-    <button onclick="sv()" style="font-weight:bold;">ZAPISZ_I_NASTEPNE</button>
+    <button onclick="timer.toggle()">START/STOP</button>
+    <button onclick="timer.reset()">RESET</button>
+    <button onclick="app.save()" class="action">ZAPISZ SESJĘ</button>
 </div>
 
 <div class="s">
-    <strong>LOG_ZADAN:</strong>
-    <table id="ht">
-        <thead><tr><th>DATA</th><th>NAZWA</th><th>CZAS</th></tr></thead>
-        <tbody id="lb"></tbody>
-    </table>
+    <span class="label">Log Aktywności (vs Rekord Globalny)</span>
+    <div style="max-height: 400px; overflow-y: auto;">
+        <table>
+            <thead><tr>
+                <th>DATA</th>
+                <th>ID</th>
+                <th>CZAS</th>
+                <th style="width:200px;">PROGRES</th>
+                <th>AKCJE</th>
+            </tr></thead>
+            <tbody id="lb"></tbody>
+        </table>
+    </div>
 </div>
 
-<button onclick="cl()" style="font-size:9px;">WYCZYSC_DATABASE</button>
+<div style="text-align:right; padding-bottom: 40px;">
+    <button onclick="app.export()">EXPORT</button>
+    <button onclick="document.getElementById('importFile').click()">IMPORT</button>
+    <input type="file" id="importFile" accept=".json" style="display:none" onchange="app.import(event)">
+    <button onclick="app.clear()" style="border-style: dashed;">WIPE</button>
+</div>
 
 <script>
-    let st, int, el = 0, h = JSON.parse(localStorage.getItem('f_v7')) || [];
+let tasks = [];
 
-    function tg() {
-        if (!int) {
-            st = Date.now() - el;
-            int = setInterval(() => { el = Date.now() - st; up(); }, 10);
-        } else { clearInterval(int); int = null; }
+// --- MODUŁ MIGRACJI DANYCH ---
+const migrate = () => {
+    const oldData = localStorage.getItem('f_v7');
+    if (oldData) {
+        try {
+            const parsedOld = JSON.parse(oldData);
+            const migrated = parsedOld.map(item => ({
+                date: item.d,
+                id: item.n,
+                timeStr: item.t,
+                ms: item.ms
+            }));
+            const existingIds = new Set(tasks.map(t => `${t.date}-${t.id}-${t.ms}`));
+            migrated.forEach(m => {
+                if (!existingIds.has(`${m.date}-${m.id}-${m.ms}`)) {
+                    tasks.push(m);
+                }
+            });
+            tasks.sort((a,b) => new Date(b.date) - new Date(a.date));
+            localStorage.setItem('f_v12', JSON.stringify(tasks));
+            document.getElementById('migrationInfo').style.display = 'block';
+        } catch(e) { console.error("Błąd migracji:", e); }
     }
+};
 
-    function up() {
-        let m = String(el % 1000).padStart(3, '0');
-        let s = String(Math.floor(el / 1000) % 60).padStart(2, '0');
-        let mn = String(Math.floor(el / 60000) % 60).padStart(2, '0');
-        let hr = String(Math.floor(el / 3600000)).padStart(2, '0');
-        document.getElementById("disp").innerText = `${hr}:${mn}:${s}.${m}`;
+try {
+    tasks = JSON.parse(localStorage.getItem('f_v12')) || [];
+} catch(e) { tasks = []; }
+
+migrate();
+
+const timer = {
+    startTime: 0, elapsed: 0, interval: null,
+    toggle() {
+        if (!this.interval) {
+            this.startTime = Date.now() - this.elapsed;
+            this.interval = setInterval(() => { this.elapsed = Date.now() - this.startTime; this.updateDisplay(); }, 10);
+        } else { clearInterval(this.interval); this.interval = null; }
+    },
+    reset() { clearInterval(this.interval); this.interval = null; this.elapsed = 0; this.updateDisplay(); },
+    updateDisplay() {
+        const ms = String(this.elapsed % 1000).padStart(3, '0');
+        const s = String(Math.floor(this.elapsed / 1000) % 60).padStart(2, '0');
+        const m = String(Math.floor(this.elapsed / 60000) % 60).padStart(2, '0');
+        const h = String(Math.floor(this.elapsed / 3600000)).padStart(2, '0');
+        document.getElementById("disp").innerText = `${h}:${m}:${s}.${ms}`;
     }
+};
 
-    function rs() { clearInterval(int); int = null; el = 0; up(); }
-
-    function f(ms) {
-        let s = Math.floor(ms / 1000);
-        let hr = Math.floor(s / 3600);
-        let mn = Math.floor((s % 3600) / 60);
-        let sc = s % 60;
-        return `${String(hr).padStart(2,'0')}:${String(mn).padStart(2,'0')}:${String(sc).padStart(2,'0')}`;
-    }
-
-    function sv() {
-        if (el === 0) return;
-        h.unshift({ d: new Date().toISOString().split('T')[0], n: document.getElementById("tn").value || "ZAD", t: document.getElementById("disp").innerText, ms: el });
-        localStorage.setItem('f_v7', JSON.stringify(h));
+const app = {
+    formatTime(ms) {
+        const s = Math.floor(ms / 1000);
+        return `${String(Math.floor(s/3600)).padStart(2,'0')}:${String(Math.floor((s%3600)/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
+    },
+    getChapter(name) {
+        const match = name.match(/(\d+)/);
+        return match ? match[1] : "Inne";
+    },
+    save() {
+        if (timer.elapsed < 1000) return;
+        tasks.unshift({
+            date: new Date().toISOString().split('T')[0],
+            id: document.getElementById("tn").value.trim() || "???",
+            timeStr: document.getElementById("disp").innerText,
+            ms: timer.elapsed
+        });
+        this.sync();
+        timer.reset();
         document.getElementById("tn").value = "";
-        clearInterval(int); el = 0; st = Date.now();
-        int = setInterval(() => { el = Date.now() - st; up(); }, 10);
-        rn();
-    }
-
-    function rn() {
+    },
+    sync() { localStorage.setItem('f_v12', JSON.stringify(tasks)); this.render(); },
+    render() { this.updateStats(); this.renderChapters(); this.renderLog(); },
+    updateStats() {
         const today = new Date().toISOString().split('T')[0];
-        const t_tasks = h.filter(x => x.d === today);
-        const all_ms = h.reduce((a, b) => a + b.ms, 0);
-        const day_ms = t_tasks.reduce((a, b) => a + b.ms, 0);
+        const todayTasks = tasks.filter(t => t.date === today);
+        const totalMs = tasks.reduce((sum, t) => sum + t.ms, 0);
+        document.getElementById("tdt").innerText = this.formatTime(todayTasks.reduce((sum, t) => sum + t.ms, 0));
+        document.getElementById("dc").innerText = todayTasks.length;
+        document.getElementById("tot").innerText = this.formatTime(totalMs);
+        document.getElementById("avg").innerText = tasks.length ? Math.round((totalMs / tasks.length) / 1000) + "s" : "0s";
+        const best = tasks.length ? tasks.reduce((max, t) => t.ms > max.ms ? t : max) : null;
+        document.getElementById("bestAll").innerText = best ? `${best.timeStr} [Zadanie ${best.id}]` : "—";
+    },
+    renderChapters() {
+        const groups = {};
+        tasks.forEach(t => {
+            const chap = this.getChapter(t.id);
+            if (!groups[chap]) groups[chap] = { count: 0, max: 0, total: 0, str: "" };
+            groups[chap].count++;
+            groups[chap].total += t.ms;
+            if (t.ms > groups[chap].max) { groups[chap].max = t.ms; groups[chap].str = t.timeStr; }
+        });
+        let html = `<table><thead><tr><th>ROZDZIAŁ</th><th>SESJI</th><th>REKORD (MAX)</th><th>ŚREDNIA</th></tr></thead><tbody>`;
+        Object.keys(groups).sort((a,b) => (parseInt(a)||0) - (parseInt(b)||0)).forEach(chap => {
+            const g = groups[chap];
+            html += `<tr><td><strong>${chap}</strong></td><td>${g.count}</td><td>${g.str}</td><td>${Math.round((g.total/g.count)/1000)}s</td></tr>`;
+        });
+        document.getElementById("chapterStats").innerHTML = html + `</tbody></table>`;
+    },
+    renderLog() {
+        // NAPRAWA PRZEPEŁNIENIA: Obliczamy globalny max zamiast per-rozdział
+        const globalMax = tasks.length ? Math.max(...tasks.map(t => t.ms)) : 0;
+        
+        const tbody = document.getElementById("lb");
+        tbody.innerHTML = "";
+        tasks.forEach((t, i) => {
+            const percent = globalMax > 0 ? (t.ms / globalMax) * 100 : 0;
+            tbody.innerHTML += `<tr><td>${t.date}</td><td><strong>${t.id}</strong></td><td>${t.timeStr}</td><td><div class="table-bar-container"><div class="table-bar" style="width:${percent}%"></div></div></td><td><button onclick="app.remove(${i})" style="padding:2px 8px; font-size:10px;">X</button></td></tr>`;
+        });
+    },
+    remove(i) { if (confirm("USUNĄĆ?")) { tasks.splice(i, 1); this.sync(); } },
+    export() {
+        const blob = new Blob([JSON.stringify(tasks, null, 2)], {type: "application/json"});
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `fizyka_v13.json`;
+        a.click();
+    },
+    import(e) {
+        const reader = new FileReader();
+        reader.onload = ev => { 
+            try { 
+                let data = JSON.parse(ev.target.result);
+                if (data.length > 0 && data[0].d) {
+                    data = data.map(item => ({
+                        date: item.d,
+                        id: item.n,
+                        timeStr: item.t,
+                        ms: item.ms
+                    }));
+                }
+                tasks = data; 
+                this.sync(); 
+            } catch(err) { alert("BŁĄD PLIKU"); } 
+        };
+        reader.readAsText(e.target.files[0]);
+    },
+    clear() { if (confirm("WYPE?")) { tasks = []; this.sync(); } }
+};
 
-        document.getElementById("lb").innerHTML = h.slice(0, 10).map(x => `<tr><td>${x.d}</td><td>${x.n}</td><td>${x.t}</td></tr>`).join('');
-        document.getElementById("dc").innerText = t_tasks.length;
-        document.getElementById("tdt").innerText = f(day_ms);
-        document.getElementById("tot").innerText = f(all_ms);
-        document.getElementById("avg").innerText = h.length ? Math.round((all_ms/h.length)/1000) + "s" : "0s";
-
-        const cts = {}; h.forEach(x => cts[x.d] = (cts[x.d] || 0) + 1);
-        const dts = Object.keys(cts).sort().slice(-7);
-        const mx = Math.max(...Object.values(cts), 1);
-        document.getElementById("ch").innerHTML = dts.map(d => `<div class="b" style="height:${(cts[d]/mx)*100}%"></div>`).join('');
-    }
-
-    function cl() { if(confirm("DEL?")) { localStorage.removeItem('f_v7'); h = []; rn(); } }
-    rn();
+app.render();
 </script>
 </body>
 </html>
