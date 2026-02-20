@@ -29,8 +29,11 @@
         .grid-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
         .migration-alert { background: black; color: white; padding: 10px; margin-bottom: 20px; display: none; font-weight: bold; text-align: center; }
         
-        /* Styl dla wykresu */
-        canvas { width: 100%; height: 250px; display: block; cursor: crosshair; }
+        canvas.main-chart { width: 100%; height: 280px; display: block; cursor: crosshair; }
+        
+        /* Styl dla mini-wykresów wielkości tekstu */
+        .sparkline { width: 80px; height: 16px; display: inline-block; vertical-align: middle; }
+        .btn-small { padding: 4px 10px; font-size: 11px; margin: 0 2px; }
     </style>
 </head>
 <body>
@@ -50,8 +53,8 @@
 </div>
 
 <div class="s">
-    <span class="label">Timeline Czasu Nauki (Suma dzienna)</span>
-    <canvas id="activityChart"></canvas>
+    <span class="label">Timeline Czasu Nauki (Interaktywny)</span>
+    <canvas id="activityChart" class="main-chart"></canvas>
 </div>
 
 <div class="s">
@@ -61,11 +64,12 @@
 
 <div class="s">
     <span class="label">Kontroler Czasu</span>
-    ID ZADANIA: <input type="text" id="tn" placeholder="np. 15.01">
+    ID ZADANIA: <input type="text" id="tn" placeholder="np. 15.01" list="taskHistory" autocomplete="off">
+    <datalist id="taskHistory"></datalist>
     <div class="t" id="disp">00:00:00.000</div>
     <button onclick="timer.toggle()">START/STOP</button>
     <button onclick="timer.reset()">RESET</button>
-    <button onclick="app.save()" class="action">ZAPISZ SESJĘ</button>
+    <button onclick="app.save()" class="action" title="Skrót: Ctrl + Enter">ZAPISZ SESJĘ</button>
 </div>
 
 <div class="s">
@@ -114,14 +118,25 @@ try { tasks = JSON.parse(localStorage.getItem('f_v12')) || []; } catch(e) { task
 migrate();
 
 const timer = {
-    startTime: 0, elapsed: 0, interval: null,
+    startTime: 0, elapsed: 0, interval: null, isRunning: false,
     toggle() {
         if (!this.interval) {
             this.startTime = Date.now() - this.elapsed;
             this.interval = setInterval(() => { this.elapsed = Date.now() - this.startTime; this.updateDisplay(); }, 10);
-        } else { clearInterval(this.interval); this.interval = null; }
+            this.isRunning = true;
+        } else { 
+            clearInterval(this.interval); 
+            this.interval = null; 
+            this.isRunning = false;
+        }
     },
-    reset() { clearInterval(this.interval); this.interval = null; this.elapsed = 0; this.updateDisplay(); },
+    reset() { 
+        clearInterval(this.interval); 
+        this.interval = null; 
+        this.elapsed = 0; 
+        this.isRunning = false;
+        this.updateDisplay(); 
+    },
     updateDisplay() {
         const ms = String(this.elapsed % 1000).padStart(3, '0');
         const s = String(Math.floor(this.elapsed / 1000) % 60).padStart(2, '0');
@@ -131,24 +146,120 @@ const timer = {
     }
 };
 
+let chartDataCache = null;
+let chartHoverX = -1;
+
 const app = {
     formatTime(ms) {
         const s = Math.floor(ms / 1000);
         return `${String(Math.floor(s/3600)).padStart(2,'0')}:${String(Math.floor((s%3600)/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
     },
     getChapter(name) { return (name.match(/(\d+)/) || ["","Inne"])[1]; },
+    
+    generateNextId(currentId) {
+        const match = currentId.match(/^(.*?)(\d+)$/);
+        if (match) {
+            const prefix = match[1];
+            const numStr = match[2];
+            const nextNum = parseInt(numStr, 10) + 1;
+            return prefix + String(nextNum).padStart(numStr.length, '0');
+        }
+        return "";
+    },
+    
+    resumeTask(id) {
+        document.getElementById("tn").value = id;
+        document.getElementById("tn").focus();
+    },
+
     save() {
         if (timer.elapsed < 1000) return;
+        if (timer.isRunning) timer.toggle();
+
+        let currentId = document.getElementById("tn").value.trim() || "???";
+        
         tasks.unshift({
             date: new Date().toISOString().split('T')[0],
-            id: document.getElementById("tn").value.trim() || "???",
+            id: currentId,
             timeStr: document.getElementById("disp").innerText,
             ms: timer.elapsed
         });
-        this.sync(); timer.reset(); document.getElementById("tn").value = "";
+        
+        this.sync(); 
+        timer.reset(); 
+        
+        if (currentId !== "???") {
+            document.getElementById("tn").value = this.generateNextId(currentId);
+        } else {
+            document.getElementById("tn").value = "";
+        }
     },
+    
+    // --- NOWY, NIEZAWODNY SYSTEM EDYCJI ---
+    editTask(index) {
+        const t = tasks[index];
+        // Jedno okno prompt, by ominąć blokady przeglądarek
+        const input = prompt(
+            `EDYCJA ZADANIA\n\nPodaj nowe ID i Czas oddzielone spacją.\nFormaty czasu: sekundy (np. 120), mm:ss, hh:mm:ss\n\nZostawienie samego ID zmieni tylko ID.`, 
+            `${t.id} ${t.timeStr}`
+        );
+
+        if (input === null || input.trim() === "") return; // Anulowano
+        
+        const parts = input.trim().split(/\s+/); // Dzieli po spacji
+        
+        let newId = t.id;
+        let timeStr = "";
+
+        if (parts.length >= 2) {
+            newId = parts[0];
+            timeStr = parts[1];
+        } else if (parts.length === 1) {
+            // Jeśli wpisano tylko jedno słowo - sprawdź czy to czas (ma dwukropek) czy ID
+            if (parts[0].includes(':')) timeStr = parts[0];
+            else newId = parts[0];
+        }
+
+        let newMs = t.ms;
+        if (timeStr !== "") {
+            const tParts = timeStr.split(':').map(Number);
+            if (!tParts.some(isNaN)) {
+                if (tParts.length === 3) newMs = (tParts[0]*3600 + tParts[1]*60 + tParts[2]) * 1000;
+                else if (tParts.length === 2) newMs = (tParts[0]*60 + tParts[1]) * 1000;
+                else if (tParts.length === 1) newMs = tParts[0] * 1000;
+            } else {
+                alert("Błąd: nierozpoznany format czasu.");
+                return;
+            }
+        }
+
+        // Zapis do tabeli
+        tasks[index].id = newId;
+        if (newMs > 0 && newMs !== t.ms) {
+            tasks[index].ms = newMs;
+            tasks[index].timeStr = this.formatTime(newMs);
+        }
+        
+        this.sync(); // Wymusza odświeżenie wszystkiego
+    },
+
     sync() { localStorage.setItem('f_v12', JSON.stringify(tasks)); this.render(); },
-    render() { this.updateStats(); this.renderChapters(); this.renderLog(); this.drawChart(); },
+    
+    render() { 
+        this.updateStats(); 
+        this.renderChapters(); 
+        this.renderLog(); 
+        this.prepareChartData();
+        this.drawChart(); 
+        this.updateBrowserHistory();
+    },
+
+    updateBrowserHistory() {
+        const datalist = document.getElementById("taskHistory");
+        const uniqueIds = [...new Set(tasks.map(t => t.id).filter(id => id !== "???"))].slice(0, 15);
+        datalist.innerHTML = uniqueIds.map(id => `<option value="${id}">`).join("");
+    },
+
     updateStats() {
         const today = new Date().toISOString().split('T')[0];
         const todayTasks = tasks.filter(t => t.date === today);
@@ -160,54 +271,107 @@ const app = {
         const best = tasks.length ? tasks.reduce((max, t) => t.ms > max.ms ? t : max) : null;
         document.getElementById("bestAll").innerText = best ? `${best.timeStr} [Zadanie ${best.id}]` : "—";
     },
+    
+    // --- ROZDZIAŁY Z MINI-WYKRESAMI (SPARKLINES) ---
     renderChapters() {
         const groups = {};
-        tasks.forEach(t => {
+        
+        // Przechodzimy od najstarszego do najnowszego, by narysować linię czasu
+        const chronologicalTasks = [...tasks].reverse();
+
+        chronologicalTasks.forEach(t => {
             const chap = this.getChapter(t.id);
-            if (!groups[chap]) groups[chap] = { count: 0, max: 0, total: 0, str: "" };
-            groups[chap].count++; groups[chap].total += t.ms;
+            if (!groups[chap]) groups[chap] = { count: 0, max: 0, total: 0, str: "", history: [] };
+            groups[chap].count++; 
+            groups[chap].total += t.ms;
+            groups[chap].history.push(t.ms); // Zbiera dane dla wykresu liniowego
             if (t.ms > groups[chap].max) { groups[chap].max = t.ms; groups[chap].str = t.timeStr; }
         });
-        let html = `<table><thead><tr><th>ROZDZIAŁ</th><th>SESJI</th><th>REKORD (MAX)</th><th>ŚREDNIA</th></tr></thead><tbody>`;
+
+        // Dodano nową kolumnę "TREND"
+        let html = `<table><thead><tr><th>ROZDZIAŁ</th><th style="width: 90px;">TREND</th><th>SESJI</th><th>REKORD</th><th>ŚREDNIA</th></tr></thead><tbody>`;
+        
         Object.keys(groups).sort((a,b) => (parseInt(a)||0) - (parseInt(b)||0)).forEach(chap => {
             const g = groups[chap];
-            html += `<tr><td><strong>${chap}</strong></td><td>${g.count}</td><td>${g.str}</td><td>${Math.round((g.total/g.count)/1000)}s</td></tr>`;
+            html += `<tr>
+                <td><strong>${chap}</strong></td>
+                <td><canvas id="sp_${chap}" class="sparkline"></canvas></td>
+                <td>${g.count}</td>
+                <td>${g.str}</td>
+                <td>${Math.round((g.total/g.count)/1000)}s</td>
+            </tr>`;
         });
         document.getElementById("chapterStats").innerHTML = html + `</tbody></table>`;
+
+        // Generowanie samych wykresów w Canvas
+        setTimeout(() => {
+            Object.keys(groups).forEach(chap => {
+                const canvas = document.getElementById(`sp_${chap}`);
+                if (!canvas) return;
+                const ctx = canvas.getContext('2d');
+                const data = groups[chap].history;
+
+                const dpr = window.devicePixelRatio || 1;
+                canvas.width = 80 * dpr;
+                canvas.height = 16 * dpr;
+                ctx.scale(dpr, dpr);
+
+                const w = 80, h = 16;
+                ctx.clearRect(0, 0, w, h);
+
+                // Jeśli jest tylko 1 zadanie - rysuje kropkę na środku
+                if(data.length === 1) {
+                    ctx.fillStyle = "black";
+                    ctx.beginPath(); ctx.arc(w/2, h/2, 2, 0, Math.PI*2); ctx.fill();
+                    return;
+                }
+
+                const max = Math.max(...data);
+                const range = max > 0 ? max : 1;
+                const stepX = w / (data.length - 1);
+
+                ctx.beginPath();
+                ctx.strokeStyle = "black";
+                ctx.lineWidth = 1.5;
+                ctx.lineJoin = "round";
+
+                data.forEach((val, i) => {
+                    const y = 2 + (h - 4) - ((val / range) * (h - 4)); // Oblicza wysokość z marginesem 2px
+                    if(i === 0) ctx.moveTo(i * stepX, y);
+                    else ctx.lineTo(i * stepX, y);
+                });
+                ctx.stroke();
+                
+                // Rysuje kropkę na końcu (ostanie wykonane zadanie)
+                const lastY = 2 + (h - 4) - ((data[data.length-1] / range) * (h - 4));
+                ctx.fillStyle = "black";
+                ctx.beginPath(); ctx.arc(w - 2, lastY, 2, 0, Math.PI*2); ctx.fill();
+            });
+        }, 0);
     },
+    
     renderLog() {
         const globalMax = tasks.length ? Math.max(...tasks.map(t => t.ms)) : 0;
         const tbody = document.getElementById("lb"); tbody.innerHTML = "";
         tasks.forEach((t, i) => {
             const percent = globalMax > 0 ? (t.ms / globalMax) * 100 : 0;
-            tbody.innerHTML += `<tr><td>${t.date}</td><td><strong>${t.id}</strong></td><td>${t.timeStr}</td><td><div class="table-bar-container"><div class="table-bar" style="width:${percent}%"></div></div></td><td><button onclick="app.remove(${i})" style="padding:2px 8px; font-size:10px;">X</button></td></tr>`;
+            tbody.innerHTML += `<tr>
+                <td>${t.date}</td>
+                <td><strong style="cursor:pointer; border-bottom:1px dashed black;" onclick="app.resumeTask('${t.id}')" title="Kopiuj do paska">${t.id}</strong></td>
+                <td>${t.timeStr}</td>
+                <td><div class="table-bar-container"><div class="table-bar" style="width:${percent}%"></div></div></td>
+                <td>
+                    <button class="btn-small" onclick="app.editTask(${i})" title="Edytuj to zadanie">E</button>
+                    <button class="btn-small" onclick="app.remove(${i})" title="Usuń to zadanie">X</button>
+                </td>
+            </tr>`;
         });
     },
     
-    // --- NOWY, PROFESJONALNY WYKRES ---
-    // --- PODMIEŃ TĘ FUNKCJĘ ---
-    drawChart() {
-        const canvas = document.getElementById('activityChart');
-        const ctx = canvas.getContext('2d');
-        
-        // Konfiguracja DPI
-        const dpr = window.devicePixelRatio || 1;
-        const rect = canvas.getBoundingClientRect();
-        canvas.width = rect.width * dpr;
-        canvas.height = rect.height * dpr;
-        ctx.scale(dpr, dpr);
-        const w = rect.width;
-        const h = rect.height;
+    // --- GŁÓWNY WYKRES ---
+    prepareChartData() {
+        if (tasks.length === 0) { chartDataCache = null; return; }
 
-        ctx.clearRect(0, 0, w, h);
-        
-        if (tasks.length === 0) {
-            ctx.fillStyle = "#aaa"; ctx.textAlign = "center"; ctx.font = "bold 12px Consolas";
-            ctx.fillText("BRAK DANYCH - ROZPOCZNIJ POMIAR", w/2, h/2);
-            return;
-        }
-
-        // 1. Agregacja danych
         let dayMap = {};
         let countMap = {};
         tasks.forEach(t => {
@@ -215,7 +379,6 @@ const app = {
             countMap[t.date] = (countMap[t.date] || 0) + 1;
         });
 
-        // 2. Oś czasu
         let dates = Object.keys(dayMap).sort();
         if (dates.length < 2 && dates.length > 0) {
             let d = new Date(dates[0]); d.setDate(d.getDate()-1);
@@ -225,44 +388,56 @@ const app = {
         let startD = new Date(dates[0]);
         let endD = new Date(dates[dates.length-1]);
         
-        let sumPoints = [];
-        let avgPoints = [];
-        let labels = [];
-        
-        // Zmienne do niezależnego skalowania
-        let maxSum = 0;
-        let maxAvg = 0;
+        chartDataCache = { points: [], maxSum: 0, maxAvg: 0 };
 
         for (let d = new Date(startD); d <= endD; d.setDate(d.getDate() + 1)) {
             let dateStr = d.toISOString().split('T')[0];
             let sum = dayMap[dateStr] || 0;
-            let count = countMap[dateStr] || 1;
+            let count = countMap[dateStr] || 0;
             let avg = sum > 0 ? sum / count : 0;
 
-            sumPoints.push(sum);
-            avgPoints.push(avg);
-            labels.push(dateStr.slice(5)); // MM-DD
-            
-            // Osobne maxima dla obu serii
-            if(sum > maxSum) maxSum = sum;
-            if(avg > maxAvg) maxAvg = avg;
+            chartDataCache.points.push({ date: dateStr, label: dateStr.slice(5), sum: sum, avg: avg, count: count });
+            if(sum > chartDataCache.maxSum) chartDataCache.maxSum = sum;
+            if(avg > chartDataCache.maxAvg) chartDataCache.maxAvg = avg;
+        }
+    },
+
+    drawChart() {
+        const canvas = document.getElementById('activityChart');
+        const ctx = canvas.getContext('2d');
+        const dpr = window.devicePixelRatio || 1;
+        const rect = canvas.getBoundingClientRect();
+        
+        canvas.width = rect.width * dpr;
+        canvas.height = rect.height * dpr;
+        ctx.scale(dpr, dpr);
+        const w = rect.width;
+        const h = rect.height;
+
+        ctx.clearRect(0, 0, w, h);
+        
+        if (!chartDataCache) {
+            ctx.fillStyle = "#aaa"; ctx.textAlign = "center"; ctx.font = "bold 12px Consolas";
+            ctx.fillText("BRAK DANYCH - ROZPOCZNIJ POMIAR", w/2, h/2);
+            return;
         }
 
-        const padB = 30; 
-        const padT = 30;
+        const padB = 30, padT = 30;
         const graphH = h - padB - padT;
-        const stepX = w / (sumPoints.length - 1);
+        const stepX = w / Math.max(1, (chartDataCache.points.length - 1));
         
-        // Funkcja obliczająca Y z uwzględnieniem konkretnego MAX (dynamiczna skala)
         const getY = (val, maxVal) => (h - padB) - (val / (maxVal || 1)) * graphH;
 
-        // Funkcja rysująca (bazowa)
-        const drawCurve = (dataArray, currentMax, isDashed, fillStyle) => {
+        const pts = chartDataCache.points.map((p, i) => ({
+            x: i * stepX,
+            ySum: getY(p.sum, chartDataCache.maxSum),
+            yAvg: getY(p.avg, chartDataCache.maxAvg),
+            data: p
+        }));
+
+        const drawCurve = (pointKey, isDashed, fillStyle) => {
             ctx.beginPath();
-            // Mapujemy punkty używając właściwej skali (currentMax)
-            let pts = dataArray.map((val, i) => ({ x: i * stepX, y: getY(val, currentMax) }));
-            
-            ctx.moveTo(pts[0].x, pts[0].y);
+            ctx.moveTo(pts[0].x, pts[0][pointKey]);
 
             for (let i = 0; i < pts.length - 1; i++) {
                 const p0 = pts[Math.max(0, i - 1)];
@@ -271,98 +446,122 @@ const app = {
                 const p3 = pts[Math.min(pts.length - 1, i + 2)];
 
                 const cp1x = p1.x + (p2.x - p0.x) / 6 * 0.5;
-                const cp1y = p1.y + (p2.y - p0.y) / 6 * 0.5;
+                const cp1y = p1[pointKey] + (p2[pointKey] - p0[pointKey]) / 6 * 0.5;
                 const cp2x = p2.x - (p3.x - p1.x) / 6 * 0.5;
-                const cp2y = p2.y - (p3.y - p1.y) / 6 * 0.5;
+                const cp2y = p2[pointKey] - (p3[pointKey] - p1[pointKey]) / 6 * 0.5;
 
-                ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y);
+                ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2[pointKey]);
             }
 
             if (fillStyle) {
-                ctx.lineTo(w, h - padB);
-                ctx.lineTo(0, h - padB);
-                ctx.closePath();
-                ctx.fillStyle = fillStyle;
-                ctx.fill();
+                ctx.lineTo(w, h - padB); ctx.lineTo(0, h - padB); ctx.closePath();
+                ctx.fillStyle = fillStyle; ctx.fill();
             } else {
-                if (isDashed) ctx.setLineDash([6, 4]);
-                else ctx.setLineDash([]);
-                
-                ctx.strokeStyle = isDashed ? "#444" : "#000";
-                ctx.lineWidth = 2.5;
-                ctx.stroke();
-                ctx.setLineDash([]);
+                ctx.setLineDash(isDashed ? [6, 4] : []);
+                ctx.strokeStyle = isDashed ? "#666" : "#000";
+                ctx.lineWidth = 2.5; ctx.stroke(); ctx.setLineDash([]);
             }
         };
 
-        // 1. Rysuj SUMA (Wypełnienie + Linia) - skala maxSum
         const grad = ctx.createLinearGradient(0, padT, 0, h - padB);
-        grad.addColorStop(0, "rgba(0,0,0,0.6)");
-        grad.addColorStop(1, "rgba(0,0,0,0.0)");
+        grad.addColorStop(0, "rgba(0,0,0,0.4)"); grad.addColorStop(1, "rgba(0,0,0,0.0)");
         
-        drawCurve(sumPoints, maxSum, false, grad); // Tło
-        drawCurve(sumPoints, maxSum, false, null); // Obrys
+        drawCurve('ySum', false, grad); drawCurve('ySum', false, null); drawCurve('yAvg', true, null);
 
-        // 2. Rysuj ŚREDNIA (Linia przerywana) - skala maxAvg
-        drawCurve(avgPoints, maxAvg, true, null);
+        ctx.fillStyle = "white"; ctx.lineWidth = 2;
+        pts.forEach(p => {
+            ctx.strokeStyle = "#000"; ctx.beginPath(); ctx.arc(p.x, p.ySum, 4, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+            ctx.strokeStyle = "#666"; ctx.beginPath(); ctx.arc(p.x, p.yAvg, 3, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+        });
 
-        // Znaczniki Dni
-        ctx.fillStyle = "black";
-        ctx.font = "10px Consolas";
-        ctx.textAlign = "center";
-        
+        ctx.fillStyle = "black"; ctx.font = "10px Consolas"; ctx.textAlign = "center";
         const maxLabels = Math.floor(w / 40);
-        const skip = Math.ceil(labels.length / maxLabels);
+        const skip = Math.ceil(pts.length / maxLabels);
 
-        for(let i=0; i<labels.length; i+=skip) {
-            const x = i * stepX;
-            ctx.beginPath(); ctx.moveTo(x, h - padB); ctx.lineTo(x, h - padB + 5);
+        for(let i=0; i<pts.length; i+=skip) {
+            ctx.beginPath(); ctx.moveTo(pts[i].x, h - padB); ctx.lineTo(pts[i].x, h - padB + 5);
             ctx.strokeStyle = "#ccc"; ctx.lineWidth = 1; ctx.stroke();
-            ctx.fillText(labels[i], x, h - 10);
+            ctx.fillText(pts[i].data.label, pts[i].x, h - 10);
         }
 
-        // Legenda (Zaktualizowana informacja o skali)
-        ctx.textAlign = "left";
-        ctx.fillStyle = "black";
-        
-        ctx.fillRect(10, 10, 12, 12);
-        ctx.fillText("SUMA CZASU (Lewa skala)", 28, 20);
-        
-        ctx.beginPath();
-        ctx.setLineDash([4, 2]);
-        ctx.moveTo(180, 16);
-        ctx.lineTo(200, 16);
-        ctx.stroke();
-        ctx.setLineDash([]);
-        ctx.fillText("ŚREDNIA ZADANIA (Prawa skala)", 206, 20);
+        ctx.textAlign = "left"; ctx.fillStyle = "black";
+        ctx.fillRect(10, 10, 12, 12); ctx.fillText("SUMA CZASU", 28, 20);
+        ctx.beginPath(); ctx.setLineDash([4, 2]); ctx.moveTo(100, 16); ctx.lineTo(120, 16); ctx.stroke(); ctx.setLineDash([]);
+        ctx.fillText("ŚREDNIA ZADANIA", 126, 20);
+
+        if (chartHoverX >= 0) {
+            let closest = pts[0], minDist = Math.abs(chartHoverX - pts[0].x);
+            for(let i=1; i<pts.length; i++) {
+                let dist = Math.abs(chartHoverX - pts[i].x);
+                if(dist < minDist) { minDist = dist; closest = pts[i]; }
+            }
+
+            ctx.beginPath(); ctx.moveTo(closest.x, padT); ctx.lineTo(closest.x, h - padB);
+            ctx.strokeStyle = "rgba(0,0,0,0.2)"; ctx.lineWidth = 2; ctx.stroke();
+
+            ctx.beginPath(); ctx.arc(closest.x, closest.ySum, 6, 0, Math.PI*2); ctx.fillStyle = "black"; ctx.fill();
+
+            const t1 = `DATA: ${closest.data.date}`;
+            const t2 = `SUMA: ${app.formatTime(closest.data.sum)}`;
+            const t3 = `ŚREDNIA: ${Math.round(closest.data.avg/1000)}s | ZADAŃ: ${closest.data.count}`;
+            
+            ctx.font = "bold 11px Consolas";
+            const tw = Math.max(ctx.measureText(t1).width, ctx.measureText(t2).width, ctx.measureText(t3).width) + 20;
+            const th = 55;
+            let tx = closest.x + 15, ty = closest.ySum - 30;
+            
+            if (tx + tw > w) tx = closest.x - tw - 15;
+            if (ty < 0) ty = 10;
+
+            ctx.fillStyle = "black"; ctx.fillRect(tx + 4, ty + 4, tw, th);
+            ctx.fillStyle = "white"; ctx.fillRect(tx, ty, tw, th);
+            ctx.strokeStyle = "black"; ctx.lineWidth = 2; ctx.strokeRect(tx, ty, tw, th);
+
+            ctx.fillStyle = "black"; ctx.textAlign = "left";
+            ctx.fillText(t1, tx + 10, ty + 18); ctx.fillText(t2, tx + 10, ty + 33); ctx.fillText(t3, tx + 10, ty + 48);
+        }
     },
 
-    remove(i) { if (confirm("USUNĄĆ?")) { tasks.splice(i, 1); this.sync(); } },
+    remove(i) { if (confirm("USUNĄĆ ZADANIE?")) { tasks.splice(i, 1); this.sync(); } },
     export() {
         const blob = new Blob([JSON.stringify(tasks, null, 2)], {type: "application/json"});
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(blob);
-        a.download = `fizyka_v13.json`;
-        a.click();
+        const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+        a.download = `fizyka_v13.json`; a.click();
     },
     import(e) {
         const reader = new FileReader();
         reader.onload = ev => { 
             try { 
                 let data = JSON.parse(ev.target.result);
-                if (data.length > 0 && data[0].d) {
-                    data = data.map(item => ({ date: item.d, id: item.n, timeStr: item.t, ms: item.ms }));
-                }
+                if (data.length > 0 && data[0].d) data = data.map(item => ({ date: item.d, id: item.n, timeStr: item.t, ms: item.ms }));
                 tasks = data; this.sync(); 
             } catch(err) { alert("BŁĄD PLIKU"); } 
         };
         reader.readAsText(e.target.files[0]);
     },
-    clear() { if (confirm("WYPE?")) { tasks = []; this.sync(); } }
+    clear() { if (confirm("CZY NA PEWNO WYCZYŚCIĆ WSZYSTKO?")) { tasks = []; this.sync(); } }
 };
 
+window.addEventListener('beforeunload', function (e) {
+    if (timer.isRunning) { e.preventDefault(); e.returnValue = ''; }
+});
+
+document.addEventListener('keydown', function(e) {
+    const isTyping = e.target.tagName === 'INPUT';
+    if (e.code === 'Space' && !isTyping) { e.preventDefault(); timer.toggle(); }
+    if (e.code === 'Escape') { if(confirm("Zresetować stoper?")) timer.reset(); }
+    if (e.code === 'Enter' && e.ctrlKey) { e.preventDefault(); app.save(); }
+});
+
+const canvasEl = document.getElementById('activityChart');
+canvasEl.addEventListener('mousemove', (e) => {
+    const rect = canvasEl.getBoundingClientRect();
+    chartHoverX = e.clientX - rect.left; requestAnimationFrame(() => app.drawChart());
+});
+canvasEl.addEventListener('mouseleave', () => { chartHoverX = -1; requestAnimationFrame(() => app.drawChart()); });
+
 app.render();
-window.addEventListener('resize', () => app.drawChart());
+window.addEventListener('resize', () => { app.renderChapters(); app.drawChart(); });
 </script>
 </body>
 </html>
