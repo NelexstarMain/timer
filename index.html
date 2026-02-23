@@ -195,18 +195,16 @@ const app = {
         }
     },
     
-    // --- NOWY, NIEZAWODNY SYSTEM EDYCJI ---
     editTask(index) {
         const t = tasks[index];
-        // Jedno okno prompt, by ominąć blokady przeglądarek
         const input = prompt(
             `EDYCJA ZADANIA\n\nPodaj nowe ID i Czas oddzielone spacją.\nFormaty czasu: sekundy (np. 120), mm:ss, hh:mm:ss\n\nZostawienie samego ID zmieni tylko ID.`, 
             `${t.id} ${t.timeStr}`
         );
 
-        if (input === null || input.trim() === "") return; // Anulowano
+        if (input === null || input.trim() === "") return; 
         
-        const parts = input.trim().split(/\s+/); // Dzieli po spacji
+        const parts = input.trim().split(/\s+/); 
         
         let newId = t.id;
         let timeStr = "";
@@ -215,7 +213,6 @@ const app = {
             newId = parts[0];
             timeStr = parts[1];
         } else if (parts.length === 1) {
-            // Jeśli wpisano tylko jedno słowo - sprawdź czy to czas (ma dwukropek) czy ID
             if (parts[0].includes(':')) timeStr = parts[0];
             else newId = parts[0];
         }
@@ -233,14 +230,13 @@ const app = {
             }
         }
 
-        // Zapis do tabeli
         tasks[index].id = newId;
         if (newMs > 0 && newMs !== t.ms) {
             tasks[index].ms = newMs;
             tasks[index].timeStr = this.formatTime(newMs);
         }
         
-        this.sync(); // Wymusza odświeżenie wszystkiego
+        this.sync(); 
     },
 
     sync() { localStorage.setItem('f_v12', JSON.stringify(tasks)); this.render(); },
@@ -272,11 +268,8 @@ const app = {
         document.getElementById("bestAll").innerText = best ? `${best.timeStr} [Zadanie ${best.id}]` : "—";
     },
     
-    // --- ROZDZIAŁY Z MINI-WYKRESAMI (SPARKLINES) ---
     renderChapters() {
         const groups = {};
-        
-        // Przechodzimy od najstarszego do najnowszego, by narysować linię czasu
         const chronologicalTasks = [...tasks].reverse();
 
         chronologicalTasks.forEach(t => {
@@ -284,11 +277,10 @@ const app = {
             if (!groups[chap]) groups[chap] = { count: 0, max: 0, total: 0, str: "", history: [] };
             groups[chap].count++; 
             groups[chap].total += t.ms;
-            groups[chap].history.push(t.ms); // Zbiera dane dla wykresu liniowego
+            groups[chap].history.push(t.ms); 
             if (t.ms > groups[chap].max) { groups[chap].max = t.ms; groups[chap].str = t.timeStr; }
         });
 
-        // Dodano nową kolumnę "TREND"
         let html = `<table><thead><tr><th>ROZDZIAŁ</th><th style="width: 90px;">TREND</th><th>SESJI</th><th>REKORD</th><th>ŚREDNIA</th></tr></thead><tbody>`;
         
         Object.keys(groups).sort((a,b) => (parseInt(a)||0) - (parseInt(b)||0)).forEach(chap => {
@@ -303,7 +295,6 @@ const app = {
         });
         document.getElementById("chapterStats").innerHTML = html + `</tbody></table>`;
 
-        // Generowanie samych wykresów w Canvas
         setTimeout(() => {
             Object.keys(groups).forEach(chap => {
                 const canvas = document.getElementById(`sp_${chap}`);
@@ -319,7 +310,6 @@ const app = {
                 const w = 80, h = 16;
                 ctx.clearRect(0, 0, w, h);
 
-                // Jeśli jest tylko 1 zadanie - rysuje kropkę na środku
                 if(data.length === 1) {
                     ctx.fillStyle = "black";
                     ctx.beginPath(); ctx.arc(w/2, h/2, 2, 0, Math.PI*2); ctx.fill();
@@ -336,13 +326,12 @@ const app = {
                 ctx.lineJoin = "round";
 
                 data.forEach((val, i) => {
-                    const y = 2 + (h - 4) - ((val / range) * (h - 4)); // Oblicza wysokość z marginesem 2px
+                    const y = 2 + (h - 4) - ((val / range) * (h - 4)); 
                     if(i === 0) ctx.moveTo(i * stepX, y);
                     else ctx.lineTo(i * stepX, y);
                 });
                 ctx.stroke();
                 
-                // Rysuje kropkę na końcu (ostanie wykonane zadanie)
                 const lastY = 2 + (h - 4) - ((data[data.length-1] / range) * (h - 4));
                 ctx.fillStyle = "black";
                 ctx.beginPath(); ctx.arc(w - 2, lastY, 2, 0, Math.PI*2); ctx.fill();
@@ -368,15 +357,25 @@ const app = {
         });
     },
     
-    // --- GŁÓWNY WYKRES ---
     prepareChartData() {
         if (tasks.length === 0) { chartDataCache = null; return; }
 
         let dayMap = {};
         let countMap = {};
-        tasks.forEach(t => {
+        let seenChapters = new Set();
+        let chapterStarts = {}; 
+
+        let chronologicalTasks = [...tasks].reverse();
+        chronologicalTasks.forEach(t => {
             dayMap[t.date] = (dayMap[t.date] || 0) + t.ms;
             countMap[t.date] = (countMap[t.date] || 0) + 1;
+
+            let chap = this.getChapter(t.id);
+            if (!seenChapters.has(chap)) {
+                seenChapters.add(chap);
+                if (!chapterStarts[t.date]) chapterStarts[t.date] = [];
+                chapterStarts[t.date].push(chap);
+            }
         });
 
         let dates = Object.keys(dayMap).sort();
@@ -388,7 +387,7 @@ const app = {
         let startD = new Date(dates[0]);
         let endD = new Date(dates[dates.length-1]);
         
-        chartDataCache = { points: [], maxSum: 0, maxAvg: 0 };
+        chartDataCache = { points: [], maxSum: 0, maxAvg: 0, chapterStarts: chapterStarts };
 
         for (let d = new Date(startD); d <= endD; d.setDate(d.getDate() + 1)) {
             let dateStr = d.toISOString().split('T')[0];
@@ -468,6 +467,32 @@ const app = {
         
         drawCurve('ySum', false, grad); drawCurve('ySum', false, null); drawCurve('yAvg', true, null);
 
+        // Rysowanie grubych kresek dla startu nowych rozdziałów i pionowych napisów
+        pts.forEach(p => {
+            if (chartDataCache.chapterStarts[p.data.date]) {
+                const chaps = chartDataCache.chapterStarts[p.data.date].join(", ");
+                
+                // Gruba linia
+                ctx.beginPath();
+                ctx.moveTo(p.x, padT);
+                ctx.lineTo(p.x, h - padB);
+                ctx.strokeStyle = "rgba(0, 0, 0, 0.2)"; // Gruba i półprzezroczysta by nie zasłaniać wykresu
+                ctx.lineWidth = 8;
+                ctx.stroke();
+
+                // Napis wzdłuż linii (obrócony pionowo)
+                ctx.save();
+                let textX = p.x < 20 ? p.x + 14 : p.x - 10; // Przesunięcie na prawo jeśli za blisko lewej krawędzi
+                ctx.translate(textX, h - padB - 10); // Ustawienie początku na dole linii
+                ctx.rotate(-Math.PI / 2); // Obrót 90 stopni (tekst z dołu do góry)
+                ctx.fillStyle = "black";
+                ctx.textAlign = "left";
+                ctx.font = "bold 12px Consolas";
+                ctx.fillText(chaps, 0, 0); // Sam napis rozdziału
+                ctx.restore();
+            }
+        });
+
         ctx.fillStyle = "white"; ctx.lineWidth = 2;
         pts.forEach(p => {
             ctx.strokeStyle = "#000"; ctx.beginPath(); ctx.arc(p.x, p.ySum, 4, 0, Math.PI*2); ctx.fill(); ctx.stroke();
@@ -475,13 +500,27 @@ const app = {
         });
 
         ctx.fillStyle = "black"; ctx.font = "10px Consolas"; ctx.textAlign = "center";
-        const maxLabels = Math.floor(w / 40);
-        const skip = Math.ceil(pts.length / maxLabels);
+        
+        const maxLabels = Math.floor(w / 65);
+        const skip = Math.max(1, Math.ceil(pts.length / maxLabels));
+        const daysEN = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
         for(let i=0; i<pts.length; i+=skip) {
-            ctx.beginPath(); ctx.moveTo(pts[i].x, h - padB); ctx.lineTo(pts[i].x, h - padB + 5);
+            let p = pts[i];
+            ctx.beginPath(); ctx.moveTo(p.x, h - padB); ctx.lineTo(p.x, h - padB + 5);
             ctx.strokeStyle = "#ccc"; ctx.lineWidth = 1; ctx.stroke();
-            ctx.fillText(pts[i].data.label, pts[i].x, h - 10);
+            
+            let safeX = p.x;
+            if (safeX < 20) safeX = 20;
+            if (safeX > w - 20) safeX = w - 20;
+            
+            ctx.fillStyle = "black";
+            ctx.fillText(p.data.label, safeX, h - 10);
+
+            let dObj = new Date(p.data.date + "T12:00:00");
+            let dayName = daysEN[dObj.getDay()];
+            ctx.fillStyle = "#666";
+            ctx.fillText(dayName, safeX, padT - 10);
         }
 
         ctx.textAlign = "left"; ctx.fillStyle = "black";
