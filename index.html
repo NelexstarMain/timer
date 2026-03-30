@@ -380,17 +380,17 @@ const app = {
 
         let dates = Object.keys(dayMap).sort();
         if (dates.length < 2 && dates.length > 0) {
-            let d = new Date(dates[0]); d.setDate(d.getDate()-1);
-            dates.unshift(d.toISOString().split('T')[0]);
+            let d = new Date(dates[0] + "T12:00:00"); d.setDate(d.getDate()-1);
+            dates.unshift(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`);
         }
 
-        let startD = new Date(dates[0]);
-        let endD = new Date(dates[dates.length-1]);
+        let startD = new Date(dates[0] + "T12:00:00");
+        let endD = new Date(dates[dates.length-1] + "T12:00:00");
         
-        chartDataCache = { points: [], maxSum: 0, maxAvg: 0, chapterStarts: chapterStarts };
+        chartDataCache = { points:[], maxSum: 0, maxAvg: 0, chapterStarts: chapterStarts };
 
         for (let d = new Date(startD); d <= endD; d.setDate(d.getDate() + 1)) {
-            let dateStr = d.toISOString().split('T')[0];
+            let dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
             let sum = dayMap[dateStr] || 0;
             let count = countMap[dateStr] || 0;
             let avg = sum > 0 ? sum / count : 0;
