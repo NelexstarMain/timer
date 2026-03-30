@@ -179,7 +179,7 @@ const app = {
         let currentId = document.getElementById("tn").value.trim() || "???";
         
         tasks.unshift({
-            date: new Date().toISOString().split('T')[0],
+            date: new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0],
             id: currentId,
             timeStr: document.getElementById("disp").innerText,
             ms: timer.elapsed
