@@ -34,13 +34,9 @@
         
         body { font-family: 'Space Mono', monospace; font-size: 14px; background: var(--bg); color: var(--text); margin:0; padding:20px 40px; overflow-x: hidden; }
         .noise-bg {
-            position: fixed; top: -75vh; left: -75vw; width: 250vw; height: 250vh;
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300' viewBox='0 0 300 300'%3E%3Cfilter id='n' color-interpolation-filters='sRGB'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.06' numOctaves='5'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3CfeComponentTransfer%3E%3CfeFuncR type='discrete' tableValues='0%200.1%200.2%200.35%200.5%200.65%200.8%201'/%3E%3CfeFuncG type='discrete' tableValues='0%200.1%200.2%200.35%200.5%200.65%200.8%201'/%3E%3CfeFuncB type='discrete' tableValues='0%200.1%200.2%200.35%200.5%200.65%200.8%201'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)'/%3E%3C/svg%3E");
-            background-size: 250vw 250vh;
-            background-repeat: no-repeat;
-            image-rendering: pixelated;
-            opacity: 0.2; mix-blend-mode: screen; pointer-events: none; z-index: 9999;
-            animation: bgNoiseDrift 60s infinite ease-in-out;
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            background-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADIAAAAyCAMAAAAp4XiDAAAAUVBMVEUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADl9nbpAAAAGnRSTlMABAgMEBQYHCAlKDA0OTxAREhMUFhcYGRobHB0eXyBgYI6Uf8AAAAJcEhZcwAADsMAAA7DAcdvqGQAAABWSURBVHicxdK7DgAhCENR4IOCIv//W9vS0Zidp00mxyL0IatS8R03k9I6LpYqS8vFVFhaVibL8sqyLF+W55XlevE7O9YfU+S8S8R8XEzExERMnETExET8ABe4AU99X7O6AAAAAElFTkSuQmCC");
+            opacity: 0.05; pointer-events: none; z-index: 9999;
         }
         .s { border: 1px solid var(--border); border-radius: 0; padding: 32px; margin-bottom: 48px; background: var(--card); position: relative; z-index: 1; overflow: hidden; transition: 0.3s;}
         .s:hover { border-color: #444; box-shadow: 0 0 30px rgba(66, 133, 244, 0.05); transform: translateY(-4px); }
@@ -103,9 +99,15 @@
         .progress-bar-fill::after, .table-bar::after { content: ""; position: absolute; top:-50px; left:-50px; width:calc(100% + 100px); height:calc(100% + 100px); background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.08' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100' height='100' filter='url(%23n)'/%3E%3C/svg%3E"); mix-blend-mode: multiply; pointer-events: none; opacity: 0.9; animation: noiseDrift 15s infinite linear; }
         .progress-text { display: none; }
         .progress-stats { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-dim); position: relative; z-index: 1;}
+        
+        #fx-canvas {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; z-index: 10000;
+        }
     </style>
 </head>
 <body>
+<canvas id="fx-canvas"></canvas>
 <div class="noise-bg"></div>
 
 <div id="migrationInfo" style="display:none;"></div>
@@ -177,26 +179,144 @@
 </div>
 
 <script>
-let tasks = [];
+// --- SYSTEM EFEKTÓW WODY (FX) ---
+const fx = {
+    canvas: document.getElementById('fx-canvas'),
+    ctx: null,
+    ripples: [],
+    
+    init() {
+        this.ctx = this.canvas.getContext('2d');
+        this.resize();
+        window.addEventListener('resize', () => this.resize());
+        this.loop();
+    },
+    
+    resize() {
+        this.canvas.width = window.innerWidth;
+        this.canvas.height = window.innerHeight;
+    },
+    
+    spawn(btn, mouseX, mouseY) {
+        if (!btn) return;
+        const rect = btn.getBoundingClientRect();
+        
+        this.ripples.push({
+            cx: mouseX, cy: mouseY,
+            rect: rect,
+            startTime: Date.now(),
+            duration: 2000, 
+            maxR: Math.max(rect.width, rect.height) * 1.5
+        });
+    },
+    
+    loop() {
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        if (this.ripples.length === 0) {
+            requestAnimationFrame(() => this.loop());
+            return;
+        }
 
-// --- MIGRACJA DANYCH ---
-const migrate = () => {
-    const oldData = localStorage.getItem('f_v7');
-    if (oldData) {
-        try {
-            const parsedOld = JSON.parse(oldData);
-            const migrated = parsedOld.map(item => ({ date: item.d, id: item.n, timeStr: item.t, ms: item.ms }));
-            const existingIds = new Set(tasks.map(t => `${t.date}-${t.id}-${t.ms}`));
-            migrated.forEach(m => { if (!existingIds.has(`${m.date}-${m.id}-${m.ms}`)) tasks.push(m); });
-            tasks.sort((a,b) => new Date(b.date) - new Date(a.date));
-            localStorage.setItem('f_v12', JSON.stringify(tasks));
-            document.getElementById('migrationInfo').style.display = 'block';
-        } catch(e) { console.error("Błąd migracji:", e); }
+        const now = Date.now();
+        const res = 3; // Rozdzielczość (3px daje świetną jakość i FPS)
+
+        for (let i = this.ripples.length - 1; i >= 0; i--) {
+            const r = this.ripples[i];
+            const elapsed = now - r.startTime;
+            const life = 1 - (elapsed / r.duration);
+            
+            if (life <= 0) { this.ripples.splice(i, 1); continue; }
+
+            this.ctx.save();
+            // Przycinanie do obszaru przycisku
+            this.ctx.beginPath();
+            this.ctx.rect(r.rect.left, r.rect.top, r.rect.width, r.rect.height);
+            this.ctx.clip();
+
+            // Renderowanie proceduralnej fali 3D
+            for (let y = r.rect.top; y < r.rect.bottom; y += res) {
+                for (let x = r.rect.left; x < r.rect.right; x += res) {
+                    const dx = x - r.cx;
+                    const dy = y - r.cy;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    
+                    // Matematyczny model fali (sinusoida z tłumieniem)
+                    const wavelength = 15; // Gęstsze fale
+                    const wavePos = dist / wavelength - elapsed * 0.015;
+                    
+                    // Nieliniowe wygaszanie - kolor trzyma się do końca
+                    const power = life > 0.2 ? 1.0 : life / 0.2;
+                    const height = Math.sin(wavePos) * 25 * power * Math.exp(-dist / 120);
+                    
+                    if (Math.abs(height) > 0.2) {
+                        const nx = Math.cos(wavePos) * dx / dist;
+                        const ny = Math.cos(wavePos) * dy / dist;
+                        const strength = (nx + ny) * power * 0.6;
+                        
+                        if (strength > 0) {
+                            this.ctx.fillStyle = `rgba(255, 255, 255, ${Math.min(0.3, strength)})`;
+                        } else {
+                            this.ctx.fillStyle = `rgba(0, 0, 0, ${Math.min(0.3, -strength)})`;
+                        }
+                        this.ctx.fillRect(x, y, res, res);
+                    }
+                }
+            }
+            this.ctx.restore();
+        }
+        
+        requestAnimationFrame(() => this.loop());
+    }
+};
+fx.init();
+
+document.addEventListener('mousedown', (e) => {
+    const btn = e.target.closest('button');
+    if (btn) {
+        fx.spawn(btn, e.clientX, e.clientY);
+    }
+});
+
+// --- KONFIGURACJA I DANE ---
+let tasks = [];
+let chartDataCache = null;
+let chartHoverX = -1;
+let needsChartUpdate = true;
+
+const loadData = () => {
+    try {
+        tasks = JSON.parse(localStorage.getItem('f_v12')) || [];
+    } catch(e) {
+        tasks = [];
+    }
+    
+    // Migracja starego formatu (tylko jeśli potrzebna)
+    if (!localStorage.getItem('migrated_v12')) {
+        const oldData = localStorage.getItem('f_v7');
+        if (oldData) {
+            try {
+                const parsedOld = JSON.parse(oldData);
+                const migrated = parsedOld.map(item => ({ date: item.d, id: item.n, timeStr: item.t, ms: item.ms }));
+                const existingIds = new Set(tasks.map(t => `${t.date}-${t.id}-${t.ms}`));
+                migrated.forEach(m => { if (!existingIds.has(`${m.date}-${m.id}-${m.ms}`)) tasks.push(m); });
+                tasks.sort((a,b) => new Date(b.date) - new Date(a.date));
+                localStorage.setItem('f_v12', JSON.stringify(tasks));
+                localStorage.setItem('migrated_v12', 'true');
+                document.getElementById('migrationInfo').style.display = 'block';
+            } catch(e) { console.error("Błąd migracji:", e); }
+        }
     }
 };
 
-try { tasks = JSON.parse(localStorage.getItem('f_v12')) || []; } catch(e) { tasks = []; }
-migrate();
+loadData();
+
+const debounce = (fn, ms) => {
+    let timeoutId;
+    return (...args) => {
+        clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => fn.apply(this, args), ms);
+    };
+};
 
 const timer = {
     startTime: 0, elapsed: 0, interval: null, isRunning: false,
@@ -206,17 +326,20 @@ const timer = {
             this.interval = setInterval(() => { this.elapsed = Date.now() - this.startTime; this.updateDisplay(); }, 10);
             this.isRunning = true;
         } else { 
+            this.stop();
+        }
+    },
+    reset() { 
+        this.stop();
+        this.elapsed = 0; 
+        this.updateDisplay(); 
+    },
+    stop() {
+        if (this.interval) {
             clearInterval(this.interval); 
             this.interval = null; 
             this.isRunning = false;
         }
-    },
-    reset() { 
-        clearInterval(this.interval); 
-        this.interval = null; 
-        this.elapsed = 0; 
-        this.isRunning = false;
-        this.updateDisplay(); 
     },
     updateDisplay() {
         const ms = String(this.elapsed % 1000).padStart(3, '0');
@@ -226,9 +349,6 @@ const timer = {
         document.getElementById("disp").innerText = `${h}:${m}:${s}.${ms}`;
     }
 };
-
-let chartDataCache = null;
-let chartHoverX = -1;
 
 const app = {
     formatTime(ms) {
@@ -320,16 +440,24 @@ const app = {
         this.sync(); 
     },
 
-    sync() { localStorage.setItem('f_v12', JSON.stringify(tasks)); this.render(); },
+    sync() { 
+        localStorage.setItem('f_v12', JSON.stringify(tasks)); 
+        needsChartUpdate = true;
+        this.render(); 
+    },
     
     render() { 
         this.updateProgress();
         this.updateStats(); 
         this.renderChapters(); 
         this.renderLog(); 
-        this.prepareChartData();
-        this.drawChart(); 
+        this.renderChart();
         this.updateBrowserHistory();
+    },
+
+    renderChart() {
+        this.prepareChartData();
+        this.drawChart();
     },
 
     updateProgress() {
@@ -410,11 +538,11 @@ const app = {
             if (t.ms > groups[chap].max) { groups[chap].max = t.ms; groups[chap].str = t.timeStr; }
         });
 
-        let html = `<table><thead><tr><th>§</th><th style="width: 90px;">TREND</th><th>SUMA</th><th>MAX</th><th>SREDNIA</th></tr></thead><tbody>`;
+        const sortedChaps = Object.keys(groups).sort((a,b) => (parseInt(a)||0) - (parseInt(b)||0));
         
-        Object.keys(groups).sort((a,b) => (parseInt(a)||0) - (parseInt(b)||0)).forEach(chap => {
+        const rows = sortedChaps.map(chap => {
             const g = groups[chap];
-            html += `<tr>
+            return `<tr>
                 <td><strong>${chap}</strong></td>
                 <td><canvas id="sp_${chap}" class="sparkline"></canvas></td>
                 <td>${g.count}</td>
@@ -422,10 +550,11 @@ const app = {
                 <td>${Math.round((g.total/g.count)/1000)}s</td>
             </tr>`;
         });
-        document.getElementById("chapterStats").innerHTML = html + `</tbody></table>`;
+
+        document.getElementById("chapterStats").innerHTML = `<table><thead><tr><th>§</th><th style="width: 90px;">TREND</th><th>SUMA</th><th>MAX</th><th>SREDNIA</th></tr></thead><tbody>${rows.join('')}</tbody></table>`;
 
         setTimeout(() => {
-            Object.keys(groups).forEach(chap => {
+            sortedChaps.forEach(chap => {
                 const canvas = document.getElementById(`sp_${chap}`);
                 if (!canvas) return;
                 const ctx = canvas.getContext('2d');
@@ -473,10 +602,10 @@ const app = {
     
     renderLog() {
         const globalMax = tasks.length ? Math.max(...tasks.map(t => t.ms)) : 0;
-        const tbody = document.getElementById("lb"); tbody.innerHTML = "";
-        tasks.forEach((t, i) => {
+        const visibleTasks = tasks.slice(0, 100); // Tylko ostatnie 100 wpisów
+        const html = visibleTasks.map((t, i) => {
             const percent = globalMax > 0 ? (t.ms / globalMax) * 100 : 0;
-            tbody.innerHTML += `<tr>
+            return `<tr>
                 <td>${t.date}</td>
                 <td><strong style="cursor:pointer; border-bottom:1px solid #444;" onclick="app.resumeTask('${t.id}')">${t.id}</strong></td>
                 <td>${t.timeStr}</td>
@@ -486,11 +615,16 @@ const app = {
                     <button class="btn-small" onclick="app.remove(${i})">⨯</button>
                 </td>
             </tr>`;
-        });
+        }).join('');
+        document.getElementById("lb").innerHTML = html;
+        if (tasks.length > 100) {
+            document.getElementById("lb").innerHTML += `<tr><td colspan="5" style="text-align:center; color:#555; padding:20px;">Wyświetlono ostatnie 100 z ${tasks.length} zadań. Pełna lista dostępna w Eksporcie.</td></tr>`;
+        }
     },
     
     prepareChartData() {
-        if (tasks.length === 0) { chartDataCache = null; return; }
+        if (!needsChartUpdate && chartDataCache) return;
+        if (tasks.length === 0) { chartDataCache = null; needsChartUpdate = false; return; }
 
         let dayMap = {};
         let countMap = {};
@@ -531,6 +665,7 @@ const app = {
             if(sum > chartDataCache.maxSum) chartDataCache.maxSum = sum;
             if(avg > chartDataCache.maxAvg) chartDataCache.maxAvg = avg;
         }
+        needsChartUpdate = false;
     },
 
     drawChart() {
@@ -751,14 +886,22 @@ document.addEventListener('keydown', function(e) {
 });
 
 const canvasEl = document.getElementById('activityChart');
+let chartFrameRequested = false;
 canvasEl.addEventListener('mousemove', (e) => {
     const rect = canvasEl.getBoundingClientRect();
-    chartHoverX = e.clientX - rect.left; requestAnimationFrame(() => app.drawChart());
+    chartHoverX = e.clientX - rect.left; 
+    if (!chartFrameRequested) {
+        chartFrameRequested = true;
+        requestAnimationFrame(() => {
+            app.drawChart();
+            chartFrameRequested = false;
+        });
+    }
 });
 canvasEl.addEventListener('mouseleave', () => { chartHoverX = -1; requestAnimationFrame(() => app.drawChart()); });
 
 app.render();
-window.addEventListener('resize', () => { app.renderChapters(); app.drawChart(); });
+window.addEventListener('resize', debounce(() => { app.renderChapters(); app.drawChart(); }, 150));
 </script>
 </body>
 </html>
