@@ -104,6 +104,40 @@
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             pointer-events: none; z-index: 10000;
         }
+
+        /* STYLE MODALA EDYCJI */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.85); display: none; justify-content: center; align-items: center;
+            z-index: 20000; backdrop-filter: blur(10px); opacity: 0; transition: opacity 0.3s;
+        }
+        .modal-overlay.active { display: flex; opacity: 1; }
+        .modal-content {
+            background: #050505; border: 1px solid #333; padding: 40px; width: 450px;
+            box-shadow: 0 0 50px rgba(66, 133, 244, 0.2); position: relative;
+            transform: translateY(20px); transition: 0.3s;
+        }
+        .modal-overlay.active .modal-content { transform: translateY(0); }
+        .modal-content h2 { 
+            margin-top: 0; background: var(--synth-grad); -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            font-size: 24px; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 30px;
+            animation: flow 3s linear infinite; background-size: 200% auto;
+        }
+        .edit-row { margin-bottom: 25px; }
+        .edit-row label { display: block; color: #555; font-size: 12px; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px;}
+        .edit-row input { 
+            background: #111; border: 1px solid #222; color: white; padding: 12px; font-family: inherit; width: 100%; box-sizing: border-box; outline: none;
+            font-size: 18px; transition: 0.3s;
+        }
+        .edit-row input:focus { border-color: #4285F4; background: #161616; }
+        .duration-inputs { display: flex; gap: 10px; align-items: center; }
+        .duration-inputs input { 
+            text-align: center; font-size: 28px; padding: 10px 5px; font-weight: bold;
+            color: #fff; text-shadow: 0 0 10px rgba(66, 133, 244, 0.5);
+            border-radius: 4px;
+        }
+        .duration-sep { font-size: 28px; color: #444; font-weight: bold; padding-bottom: 20px;}
+        input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
     </style>
 </head>
 <body>
@@ -176,6 +210,43 @@
     <button onclick="app.export()">[ EXPORT ]</button>
     <button onclick="document.getElementById('importFile').click()">[ IMPORT ]</button>
     <input type="file" id="importFile" accept=".json" style="display:none" onchange="app.import(event)">
+</div>
+
+<div class="modal-overlay" id="editModal">
+    <div class="modal-content">
+        <h2>Edytuj Zadanie</h2>
+        <div class="edit-row">
+            <label>ID Zadania</label>
+            <input type="text" id="editId" spellcheck="false">
+        </div>
+        <div class="edit-row">
+            <label>Data</label>
+            <input type="date" id="editDate" style="color-scheme: dark;">
+        </div>
+        <div class="edit-row">
+            <label>Czas trwania (GG : MM : SS)</label>
+            <div class="duration-inputs">
+                <div style="flex:1">
+                    <input type="number" id="editH" min="0" max="999" placeholder="00">
+                    <div style="font-size:10px; color:#444; text-align:center; margin-top:5px;">GODZ</div>
+                </div>
+                <span class="duration-sep">:</span>
+                <div style="flex:1">
+                    <input type="number" id="editM" min="0" max="59" placeholder="00">
+                    <div style="font-size:10px; color:#444; text-align:center; margin-top:5px;">MIN</div>
+                </div>
+                <span class="duration-sep">:</span>
+                <div style="flex:1">
+                    <input type="number" id="editS" min="0" max="59" placeholder="00">
+                    <div style="font-size:10px; color:#444; text-align:center; margin-top:5px;">SEK</div>
+                </div>
+            </div>
+        </div>
+        <div style="margin-top: 40px; display: flex; justify-content: space-between; gap: 15px;">
+            <button onclick="app.closeEditModal()" style="flex: 1;">[ ANULUJ ]</button>
+            <button class="action" onclick="app.saveEdit()" style="flex: 1;">[ ZAPISZ ]</button>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -396,48 +467,53 @@ const app = {
         }
     },
     
-    editTask(index) {
+    editingIndex: -1,
+    showEditModal(index) {
+        this.editingIndex = index;
         const t = tasks[index];
-        const input = prompt(
-            `EDYCJA ZADANIA\n\nPodaj nowe ID i Czas oddzielone spacją.\nFormaty czasu: sekundy (np. 120), mm:ss, hh:mm:ss\n\nZostawienie samego ID zmieni tylko ID.`, 
-            `${t.id} ${t.timeStr}`
-        );
-
-        if (input === null || input.trim() === "") return; 
         
-        const parts = input.trim().split(/\s+/); 
+        document.getElementById("editId").value = t.id;
+        document.getElementById("editDate").value = t.date;
         
-        let newId = t.id;
-        let timeStr = "";
-
-        if (parts.length >= 2) {
-            newId = parts[0];
-            timeStr = parts[1];
-        } else if (parts.length === 1) {
-            if (parts[0].includes(':')) timeStr = parts[0];
-            else newId = parts[0];
-        }
-
-        let newMs = t.ms;
-        if (timeStr !== "") {
-            const tParts = timeStr.split(':').map(Number);
-            if (!tParts.some(isNaN)) {
-                if (tParts.length === 3) newMs = (tParts[0]*3600 + tParts[1]*60 + tParts[2]) * 1000;
-                else if (tParts.length === 2) newMs = (tParts[0]*60 + tParts[1]) * 1000;
-                else if (tParts.length === 1) newMs = tParts[0] * 1000;
-            } else {
-                alert("Błąd: nierozpoznany format czasu.");
-                return;
-            }
-        }
-
-        tasks[index].id = newId;
-        if (newMs > 0 && newMs !== t.ms) {
-            tasks[index].ms = newMs;
-            tasks[index].timeStr = this.formatTime(newMs);
-        }
+        const h = Math.floor(t.ms / 3600000);
+        const m = Math.floor((t.ms % 3600000) / 60000);
+        const s = Math.floor((t.ms % 60000) / 1000);
         
-        this.sync(); 
+        document.getElementById("editH").value = h;
+        document.getElementById("editM").value = m;
+        document.getElementById("editS").value = s;
+        
+        document.getElementById("editModal").classList.add("active");
+    },
+
+    closeEditModal() {
+        document.getElementById("editModal").classList.remove("active");
+        this.editingIndex = -1;
+    },
+
+    saveEdit() {
+        if (this.editingIndex === -1) return;
+        
+        const newId = document.getElementById("editId").value.trim() || "???";
+        const newDate = document.getElementById("editDate").value;
+        const h = parseInt(document.getElementById("editH").value) || 0;
+        const m = parseInt(document.getElementById("editM").value) || 0;
+        const s = parseInt(document.getElementById("editS").value) || 0;
+        
+        const newMs = (h * 3600 + m * 60 + s) * 1000;
+        
+        if (!newDate) { alert("Wybierz poprawną datę!"); return; }
+
+        tasks[this.editingIndex].id = newId;
+        tasks[this.editingIndex].date = newDate;
+        tasks[this.editingIndex].ms = newMs;
+        tasks[this.editingIndex].timeStr = this.formatTime(newMs);
+        
+        // Sortowanie po dacie (opcjonalne, ale przydatne)
+        tasks.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+        this.sync();
+        this.closeEditModal();
     },
 
     sync() { 
@@ -611,7 +687,7 @@ const app = {
                 <td>${t.timeStr}</td>
                 <td><div class="table-bar-container"><div class="table-bar" style="width:${percent}%"></div></div></td>
                 <td>
-                    <button class="btn-small" onclick="app.editTask(${i})">Δ</button>
+                    <button class="btn-small" onclick="app.showEditModal(${i})">Δ</button>
                     <button class="btn-small" onclick="app.remove(${i})">⨯</button>
                 </td>
             </tr>`;
